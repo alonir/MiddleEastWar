@@ -1,0 +1,439 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+body,
+html {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    /* Fallback background */
+}
+
+.country-label {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    text-shadow: 2px 2px 4px #000000;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.country-label:hover {
+    color: black;
+    text-shadow: 0px 0px 3px white, 0px 0px 5px white;
+    z-index: 1000 !important;
+    /* Ensure it pops on top */
+}
+
+.country-marker-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.country-strength-wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.country-strength-bar {
+    width: 50px;
+    height: 6px;
+    background-color: rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(0, 0, 0, 0.8);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+.country-strength-fill {
+    height: 100%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.country-strength-text {
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 1px 1px 2px #000;
+}
+
+.country-name-with-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.peace-icon {
+    font-size: 14px;
+    filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8));
+}
+
+.hostile-icon {
+    font-size: 14px;
+    filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8));
+}
+
+.neutral-icon {
+    font-size: 14px;
+    filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8));
+}
+
+.stats-tooltip {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid #444;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    padding: 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.stats-tooltip strong {
+    color: #4CAF50;
+    /* Green for headers/values */
+}
+
+#ui-container {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 1000; /* Above map */
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+#language-selector {
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(12px);
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+#language-selector:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+
+#restart-game-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: rgba(153, 27, 27, 0.4);
+    backdrop-filter: blur(12px);
+    color: #fca5a5;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+#restart-game-btn:hover {
+    background: rgba(185, 28, 28, 0.6);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+#restart-game-btn:active {
+    transform: scale(0.95);
+}
+
+/* RTL Support */
+.rtl {
+    direction: rtl;
+    text-align: right;
+}
+
+.rtl .stats-tooltip {
+    text-align: right;
+}
+
+/* --- Country List Panel --- */
+#country-list-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 250px;
+    height: calc(100% - 40px);
+    background: rgba(10, 15, 20, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: white;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#panel-title {
+    margin: 0;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    font-size: 18px;
+    cursor: move;
+}
+
+#country-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.country-list-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.country-list-item:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#turn-container {
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.4);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#turn-display {
+    font-size: 14px;
+    font-weight: bold;
+    color: #ffd700;
+}
+
+#end-turn-btn {
+    padding: 8px 16px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#end-turn-btn:hover {
+    background-color: #45a049;
+}
+
+#end-turn-btn:disabled {
+    background-color: #6b7280;
+    color: #d1d5db;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+/* --- Context Menu --- */
+#country-context-menu {
+    position: absolute;
+    z-index: 2000;
+    width: 140px;
+    background: rgba(10, 15, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    color: white;
+    box-shadow: -4px 4px 15px rgba(0,0,0,0.5);
+    transition: opacity 0.2s;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#country-context-menu.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#context-menu-title {
+    margin: 0 0 5px 0;
+    font-size: 16px;
+    color: #f8fafc;
+    text-align: center;
+}
+
+#context-menu-status {
+    font-size: 13px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+    text-align: center;
+    font-weight: bold;
+}
+.status-peace { color: #4ade80 !important; }
+.status-moderate { color: #facc15 !important; }
+.status-war { color: #f87171 !important; }
+
+.context-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.action-btn {
+    padding: 10px;
+    background-color: rgba(255,255,255,0.1);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.action-btn:hover:not(:disabled) {
+    background-color: rgba(255,255,255,0.2);
+}
+
+.action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background-color: rgba(255,255,255,0.05);
+}
+
+/* Newspaper Overlay */
+#newspaper-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85); /* Dark background */
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.5s;
+}
+
+.attack-emoji {
+    position: absolute;
+    font-size: 28px;
+    margin-left: -14px;
+    margin-top: -14px;
+    transition: left 2s ease-in, top 2s ease-in, transform 0.3s;
+    pointer-events: none;
+    z-index: 5000;
+    text-shadow: 0 0 5px rgba(255,100,0,0.8);
+}
+
+.newspaper-content {
+    background-color: #f4f4f4;
+    /* Off-white newspaper color */
+    color: #111;
+    width: 600px;
+    max-width: 90%;
+    padding: 40px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    font-family: 'Times New Roman', Times, serif;
+    text-align: center;
+    position: relative;
+    border: 1px solid #ddd;
+}
+
+#close-newspaper {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #333;
+}
+
+#close-newspaper:hover {
+    color: #000;
+}
+
+.newspaper-header {
+    font-family: 'Chomsky', 'Times New Roman', serif;
+    /* Fallback to Times */
+    font-size: 48px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 3px double #000;
+    padding-bottom: 10px;
+}
+
+.newspaper-date {
+    font-size: 14px;
+    font-style: italic;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #000;
+    padding-bottom: 5px;
+}
+
+.newspaper-headline {
+    font-size: 42px;
+    font-weight: 900;
+    margin: 20px 0 10px;
+    line-height: 1.1;
+    text-transform: uppercase;
+}
+
+.newspaper-subhead {
+    font-size: 24px;
+    font-weight: bold;
+    font-style: italic;
+    margin-bottom: 20px;
+}
+
+.newspaper-body {
+    font-size: 18px;
+    line-height: 1.6;
+    text-align: justify;
+    column-count: 2;
+    column-gap: 30px;
+}
+
+.newspaper-body p {
+    margin-bottom: 15px;
+}

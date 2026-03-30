@@ -1,0 +1,20 @@
+{
+  "turn": 1,
+  "warDeclaredThisTurn": true,
+  "diplomacy": {
+    "egypt": "war",
+    "jordan": "peace",
+    "turkey": "peace",
+    "uae": "peace",
+    "lebanon": "hostile",
+    "syria": "hostile",
+    "iran": "hostile",
+    "qatar": "hostile",
+    "yemen": "hostile",
+    "bahrain": "hostile",
+    "saudi_arabia": "neutral",
+    "oman": "neutral",
+    "kuwait": "neutral",
+    "iraq": "hostile"
+  }
+}

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Middle East War Game (2D)</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="newspaper-overlay">
+        <div class="newspaper-content">
+            <button id="close-newspaper">X</button>
+            <div class="newspaper-header">The New York Times</div>
+            <div class="newspaper-date">OCTOBER 7, 2023</div>
+            <hr class="newspaper-divider">
+            <h1 class="newspaper-headline">ISRAEL UNDER ATTACK</h1>
+            <h2 class="newspaper-subhead">HAMAS LAUNCHES SURPRISE ASSAULT</h2>
+            <div class="newspaper-body">
+                <p>In a sudden and unprecedented escalation, Hamas militants have launched a massive surprise attack on
+                    Israel from the Gaza Strip. Thousands of rockets have been fired, and ground incursions are reported
+                    in southern Israeli communities.</p>
+                <p>The Israeli government has declared a state of war as the IDF mobilizes reserves to respond to the
+                    crisis.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui-container">
+        <select id="language-selector">
+            <option value="en">English</option>
+            <option value="he" selected>עברית</option>
+            <option value="ar">العربية</option>
+        </select>
+        <button id="restart-game-btn">Restart Game</button>
+    </div>
+
+    <!-- Country List Panel -->
+    <div id="country-list-panel">
+        <h3 id="panel-title">Countries</h3>
+        <ul id="country-list"></ul>
+        <div id="turn-container">
+            <span id="turn-display">Turn 1</span>
+            <button id="end-turn-btn">End Turn</button>
+        </div>
+    </div>
+
+    <!-- Country Context Menu -->
+    <div id="country-context-menu" style="display: none;">
+        <h4 id="context-menu-title">Country Name</h4>
+        <div id="context-menu-status">Status: Moderate</div>
+        <div class="context-buttons">
+            <button id="btn-declare-war" class="action-btn">Declare War</button>
+            <button id="btn-offer-peace" class="action-btn">Offer Peace</button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+    <script src="game.js"></script>
+</body>
+
+</html>
