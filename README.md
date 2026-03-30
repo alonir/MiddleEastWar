@@ -48,4 +48,4 @@ Notes:
 
 - `attackerForcesPct` and `defenderForcesPct` are from `0` to `1`.
 - Winner is decided by weighted military power + rule modifiers from `rules/war-rules.json`.
-.
+
