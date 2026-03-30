@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_SERVICE_NAME: middleeastwar
+      GCP_REGION: us-central1
     permissions:
       contents: read
 
@@ -23,7 +26,7 @@ jobs:
             echo "Missing GitHub secret: GCP_SA_KEY"
             exit 1
           fi
-          if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then
+          if [ -z "${GCP_PROJECT_ID}" ]; then
             echo "Missing GitHub secret: GCP_PROJECT_ID"
             exit 1
           fi
@@ -37,5 +40,5 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Deploy to Cloud Run
-        run: bash scripts/sync-to-gcloud.sh "${{ secrets.GCP_PROJECT_ID }}" middleeastwar us-central1
+        run: bash scripts/sync-to-gcloud.sh
 

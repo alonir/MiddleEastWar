@@ -3,14 +3,19 @@ set -euo pipefail
 
 # Sync current source to Google Cloud Run by building from source.
 # Usage:
-#   bash scripts/sync-to-gcloud.sh <PROJECT_ID> [SERVICE_NAME] [REGION]
+#   bash scripts/sync-to-gcloud.sh [PROJECT_ID] [SERVICE_NAME] [REGION]
 #
 # Example:
 #   bash scripts/sync-to-gcloud.sh middleeastwar middleeastwar us-central1
 
-PROJECT_ID="${1:-}"
-SERVICE_NAME="${2:-middleeastwar}"
-REGION="${3:-us-central1}"
+# Resolution order:
+# 1) CLI args
+# 2) Environment vars: GCP_PROJECT_ID, GCP_SERVICE_NAME, GCP_REGION
+# 3) gcloud config defaults (project and run/region)
+# 4) hard defaults for service/region
+PROJECT_ID="${1:-${GCP_PROJECT_ID:-}}"
+SERVICE_NAME="${2:-${GCP_SERVICE_NAME:-middleeastwar}}"
+REGION="${3:-${GCP_REGION:-}}"
 CURRENT_STEP="initialization"
 
 log() {
@@ -32,13 +37,26 @@ fail() {
 
 trap fail ERR
 
-if [[ -z "${PROJECT_ID}" ]]; then
-  echo "Usage: bash scripts/sync-to-gcloud.sh <PROJECT_ID> [SERVICE_NAME] [REGION]"
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "gcloud CLI not found. Install it first."
   exit 1
 fi
 
-if ! command -v gcloud >/dev/null 2>&1; then
-  echo "gcloud CLI not found. Install it first."
+if [[ -z "${PROJECT_ID}" ]]; then
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+fi
+if [[ -z "${REGION}" ]]; then
+  REGION="$(gcloud config get-value run/region 2>/dev/null || true)"
+fi
+if [[ -z "${REGION}" ]]; then
+  REGION="us-central1"
+fi
+if [[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]]; then
+  echo "Missing project id."
+  echo "Set one of:"
+  echo "  - argument 1: bash scripts/sync-to-gcloud.sh <PROJECT_ID>"
+  echo "  - env var: export GCP_PROJECT_ID=<PROJECT_ID>"
+  echo "  - gcloud default: gcloud config set project <PROJECT_ID>"
   exit 1
 fi
 
