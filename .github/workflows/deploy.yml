@@ -39,6 +39,22 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v3
 
+      - name: Debug gcloud environment
+        run: |
+          set -x
+          echo "Repo: ${GITHUB_REPOSITORY}"
+          echo "Branch: ${GITHUB_REF}"
+          echo "Actor: ${GITHUB_ACTOR}"
+          echo "Project from env: ${GCP_PROJECT_ID}"
+          echo "Service from env: ${GCP_SERVICE_NAME}"
+          echo "Region from env: ${GCP_REGION}"
+          gcloud --version
+          gcloud auth list
+          gcloud config list
+          gcloud projects describe "${GCP_PROJECT_ID}" --format="value(projectId,projectNumber)"
+
       - name: Deploy to Cloud Run
-        run: bash scripts/sync-to-gcloud.sh
+        run: |
+          set -x
+          bash -x scripts/sync-to-gcloud.sh
 
