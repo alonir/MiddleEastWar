@@ -490,6 +490,11 @@ function renderCountryList() {
         li.addEventListener('mouseleave', () => {
             scheduleCloseContextMenu();
         });
+
+        li.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openContextMenu(country, li);
+        });
         
         listEl.appendChild(li);
     });
@@ -717,6 +722,12 @@ function scheduleCloseContextMenu() {
     }, 150);
 }
 
+function closeContextMenuImmediately() {
+    clearTimeout(closeMenuTimeout);
+    contextMenu.classList.remove('visible');
+    contextMenu.style.display = 'none';
+}
+
 function declareWar(country) {
     if (gameState.warDeclaredThisTurn || gameState.diplomacy[country.id] === 'war') return;
 
@@ -896,6 +907,12 @@ const panelTitle = document.getElementById('panel-title');
 
 L.DomEvent.disableClickPropagation(listPanel);
 L.DomEvent.disableScrollPropagation(listPanel);
+
+document.addEventListener('click', (event) => {
+    if (!contextMenu.contains(event.target)) {
+        closeContextMenuImmediately();
+    }
+});
 
 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 panelTitle.onmousedown = function dragMouseDown(e) {
