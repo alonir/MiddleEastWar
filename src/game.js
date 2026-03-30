@@ -505,12 +505,22 @@ const contextMenu = document.getElementById('country-context-menu');
 const battlePowerPanel = document.getElementById('battle-power-panel');
 let selectedWarTactic = 'attach_all_power';
 
+function isMobileViewport() {
+    return window.matchMedia('(max-width: 900px)').matches;
+}
+
 contextMenu.addEventListener('mouseenter', () => {
     clearTimeout(closeMenuTimeout);
 });
 
 contextMenu.addEventListener('mouseleave', () => {
     scheduleCloseContextMenu();
+});
+
+contextMenu.addEventListener('click', (event) => {
+    if (event.target && event.target.classList.contains('context-menu-close')) {
+        closeContextMenuImmediately();
+    }
 });
 
 if (battlePowerPanel) {
@@ -523,8 +533,13 @@ if (battlePowerPanel) {
 
 function hideBattlePowerPanel() {
     if (!battlePowerPanel) return;
-    battlePowerPanel.style.display = 'none';
-    battlePowerPanel.innerHTML = '';
+    battlePowerPanel.classList.remove('visible');
+    setTimeout(() => {
+        if (!battlePowerPanel.classList.contains('visible')) {
+            battlePowerPanel.style.display = 'none';
+            battlePowerPanel.innerHTML = '';
+        }
+    }, 220);
 }
 
 function renderWarTacticOptions() {
@@ -554,6 +569,7 @@ function renderWarTacticOptions() {
 
 async function showBattlePowerPanel(country) {
     if (!battlePowerPanel || !country || country.id === 'israel') return;
+    battlePowerPanel.classList.remove('visible');
     battlePowerPanel.style.display = 'block';
     battlePowerPanel.innerHTML = `
         <button class="battle-power-close" aria-label="Close">x</button>
@@ -616,6 +632,8 @@ async function showBattlePowerPanel(country) {
             selectedWarTactic = radio.value;
         });
     });
+
+    setTimeout(() => battlePowerPanel.classList.add('visible'), 10);
 }
 
 function openContextMenu(country, liElement) {
@@ -700,12 +718,20 @@ function openContextMenu(country, liElement) {
         }
     }
     
-    // Position menu to the left of the list item
-    const liRect = liElement.getBoundingClientRect();
-    const menuWidth = 140 + 24; // approx width + padding
-    
-    contextMenu.style.top = `${liRect.top}px`;
-    contextMenu.style.left = `${liRect.left - menuWidth - 10}px`;
+    if (isMobileViewport()) {
+        contextMenu.style.top = 'auto';
+        contextMenu.style.left = '12px';
+        contextMenu.style.right = '12px';
+        contextMenu.style.bottom = '10px';
+    } else {
+        // Position menu to the left of the list item
+        const liRect = liElement.getBoundingClientRect();
+        const menuWidth = 140 + 24; // approx width + padding
+        contextMenu.style.right = 'auto';
+        contextMenu.style.bottom = 'auto';
+        contextMenu.style.top = `${liRect.top}px`;
+        contextMenu.style.left = `${liRect.left - menuWidth - 10}px`;
+    }
     contextMenu.style.display = 'block';
     
     setTimeout(() => contextMenu.classList.add('visible'), 10);
