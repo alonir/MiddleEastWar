@@ -23,10 +23,11 @@ log() {
 }
 
 fail() {
+  local exit_code=$?
   echo
   echo "[sync-to-gcloud] ERROR during step: ${CURRENT_STEP}"
   echo "[sync-to-gcloud] Command: ${BASH_COMMAND}"
-  echo "[sync-to-gcloud] Exit code: $?"
+  echo "[sync-to-gcloud] Exit code: ${exit_code}"
   echo
   echo "[sync-to-gcloud] Hints:"
   echo "  - Check PROJECT_ID is the project ID string (not project number)."
@@ -73,12 +74,15 @@ gcloud config set project "${PROJECT_ID}"
 gcloud config set run/region "${REGION}"
 
 CURRENT_STEP="enable required APIs"
-gcloud services enable \
+if ! gcloud services enable \
   run.googleapis.com \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
   --project "${PROJECT_ID}" \
-  --quiet
+  --quiet; then
+  log "Could not enable one or more required APIs with current identity."
+  log "Proceeding assuming APIs were enabled beforehand by a project admin."
+fi
 
 CURRENT_STEP="deploy to cloud run"
 gcloud run deploy "${SERVICE_NAME}" \
