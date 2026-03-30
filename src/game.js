@@ -498,6 +498,7 @@ function renderCountryList() {
 let closeMenuTimeout;
 const contextMenu = document.getElementById('country-context-menu');
 const battlePowerPanel = document.getElementById('battle-power-panel');
+let selectedWarTactic = 'attach_all_power';
 
 contextMenu.addEventListener('mouseenter', () => {
     clearTimeout(closeMenuTimeout);
@@ -521,6 +522,31 @@ function hideBattlePowerPanel() {
     battlePowerPanel.innerHTML = '';
 }
 
+function renderWarTacticOptions() {
+    const options = [
+        { value: 'attach_all_power', label: 'Attach in all power' },
+        { value: 'defend', label: 'Defend' },
+        { value: 'withdrawl', label: 'Withdrawl' }
+    ];
+
+    return `
+        <div class="battle-tactics-group">
+            <div class="battle-tactics-title">War Tactic</div>
+            ${options.map(option => `
+                <label class="battle-tactic-option">
+                    <input
+                        type="radio"
+                        name="war-tactic"
+                        value="${option.value}"
+                        ${selectedWarTactic === option.value ? 'checked' : ''}
+                    />
+                    <span>${option.label}</span>
+                </label>
+            `).join('')}
+        </div>
+    `;
+}
+
 async function showBattlePowerPanel(country) {
     if (!battlePowerPanel || !country || country.id === 'israel') return;
     battlePowerPanel.style.display = 'block';
@@ -528,6 +554,7 @@ async function showBattlePowerPanel(country) {
         <button class="battle-power-close" aria-label="Close">x</button>
         <div class="battle-power-title">Balance of Power</div>
         <div>Loading...</div>
+        ${renderWarTacticOptions()}
     `;
 
     try {
@@ -567,14 +594,23 @@ async function showBattlePowerPanel(country) {
                 <div class="battle-power-bar"><div class="battle-power-fill defender" style="width: ${defenderPct.toFixed(1)}%;"></div></div>
             </div>
             <div class="battle-power-winner">${winnerLabel}</div>
+            ${renderWarTacticOptions()}
         `;
     } catch (err) {
         battlePowerPanel.innerHTML = `
             <button class="battle-power-close" aria-label="Close">x</button>
             <div class="battle-power-title">Balance of Power</div>
             <div>Failed to load</div>
+            ${renderWarTacticOptions()}
         `;
     }
+
+    const tacticRadios = battlePowerPanel.querySelectorAll('input[name="war-tactic"]');
+    tacticRadios.forEach((radio) => {
+        radio.addEventListener('change', () => {
+            selectedWarTactic = radio.value;
+        });
+    });
 }
 
 function openContextMenu(country, liElement) {
