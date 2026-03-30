@@ -51,7 +51,8 @@ jobs:
           gcloud --version
           gcloud auth list
           gcloud config list
-          gcloud projects describe "${GCP_PROJECT_ID}" --format="value(projectId,projectNumber)"
+          # Do not fail deploy diagnostics when Cloud Resource Manager API is disabled.
+          gcloud projects describe "${GCP_PROJECT_ID}" --format="value(projectId,projectNumber)" || true
 
       - name: Deploy to Cloud Run
         run: |

@@ -68,13 +68,6 @@ log "Using service: ${SERVICE_NAME}"
 log "Using region: ${REGION}"
 log "Working directory: ${ROOT_DIR}"
 
-CURRENT_STEP="validate project id"
-if ! gcloud projects describe "${PROJECT_ID}" --format="value(projectId)" >/dev/null 2>&1; then
-  echo "[sync-to-gcloud] Invalid or inaccessible project id: ${PROJECT_ID}"
-  echo "[sync-to-gcloud] Run: gcloud projects list"
-  exit 1
-fi
-
 CURRENT_STEP="configure gcloud defaults"
 gcloud config set project "${PROJECT_ID}"
 gcloud config set run/region "${REGION}"
