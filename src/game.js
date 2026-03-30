@@ -508,11 +508,10 @@ contextMenu.addEventListener('mouseleave', () => {
 });
 
 if (battlePowerPanel) {
-    battlePowerPanel.addEventListener('mouseenter', () => {
-        clearTimeout(closeMenuTimeout);
-    });
-    battlePowerPanel.addEventListener('mouseleave', () => {
-        scheduleCloseContextMenu();
+    battlePowerPanel.addEventListener('click', (event) => {
+        if (event.target && event.target.classList.contains('battle-power-close')) {
+            hideBattlePowerPanel();
+        }
     });
 }
 
@@ -524,12 +523,12 @@ function hideBattlePowerPanel() {
 
 async function showBattlePowerPanel(country) {
     if (!battlePowerPanel || !country || country.id === 'israel') return;
-
-    const menuRect = contextMenu.getBoundingClientRect();
-    battlePowerPanel.style.top = `${menuRect.top}px`;
-    battlePowerPanel.style.left = `${menuRect.left - 230}px`;
     battlePowerPanel.style.display = 'block';
-    battlePowerPanel.innerHTML = '<div class="battle-power-title">Balance of Power</div><div>Loading...</div>';
+    battlePowerPanel.innerHTML = `
+        <button class="battle-power-close" aria-label="Close">x</button>
+        <div class="battle-power-title">Balance of Power</div>
+        <div>Loading...</div>
+    `;
 
     try {
         const response = await fetch('/api/resolve-battle', {
@@ -557,6 +556,7 @@ async function showBattlePowerPanel(country) {
             : `Predicted winner: ${result.winner}`;
 
         battlePowerPanel.innerHTML = `
+            <button class="battle-power-close" aria-label="Close">x</button>
             <div class="battle-power-title">Balance of Power</div>
             <div class="battle-power-row">
                 <div class="battle-power-label"><span>Israel</span><span>${attackerPct.toFixed(1)}%</span></div>
@@ -570,6 +570,7 @@ async function showBattlePowerPanel(country) {
         `;
     } catch (err) {
         battlePowerPanel.innerHTML = `
+            <button class="battle-power-close" aria-label="Close">x</button>
             <div class="battle-power-title">Balance of Power</div>
             <div>Failed to load</div>
         `;
@@ -578,7 +579,6 @@ async function showBattlePowerPanel(country) {
 
 function openContextMenu(country, liElement) {
     clearTimeout(closeMenuTimeout);
-    hideBattlePowerPanel();
     const menuTitle = document.getElementById('context-menu-title');
     const menuStatus = document.getElementById('context-menu-status');
     
@@ -639,7 +639,7 @@ function openContextMenu(country, liElement) {
         btnWar.disabled = gameState.warDeclaredThisTurn && !isAtWar;
         btnPeace.disabled = (diplomacyStatus === 'peace') || gameState.warDeclaredThisTurn;
 
-        // Never allow click action when already at war.
+        // Never allow war declaration click action when already at war.
         btnWar.onclick = null;
         if (!isAtWar && !gameState.warDeclaredThisTurn) {
             btnWar.onclick = () => {
@@ -651,11 +651,10 @@ function openContextMenu(country, liElement) {
         btnWar.onmouseenter = null;
         btnWar.onmouseleave = null;
         if (isAtWar) {
-            btnWar.onmouseenter = () => {
+            btnWar.onclick = () => {
+                contextMenu.classList.remove('visible');
+                contextMenu.style.display = 'none';
                 showBattlePowerPanel(country);
-            };
-            btnWar.onmouseleave = () => {
-                scheduleCloseContextMenu();
             };
         }
     }
@@ -674,7 +673,6 @@ function openContextMenu(country, liElement) {
 function scheduleCloseContextMenu() {
     closeMenuTimeout = setTimeout(() => {
         contextMenu.classList.remove('visible');
-        hideBattlePowerPanel();
         setTimeout(() => {
             if (!contextMenu.classList.contains('visible')) {
                 contextMenu.style.display = 'none';
