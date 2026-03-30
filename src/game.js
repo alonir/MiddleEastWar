@@ -497,6 +497,7 @@ function renderCountryList() {
 
 let closeMenuTimeout;
 const contextMenu = document.getElementById('country-context-menu');
+const battlePowerPanel = document.getElementById('battle-power-panel');
 
 contextMenu.addEventListener('mouseenter', () => {
     clearTimeout(closeMenuTimeout);
@@ -506,8 +507,78 @@ contextMenu.addEventListener('mouseleave', () => {
     scheduleCloseContextMenu();
 });
 
+if (battlePowerPanel) {
+    battlePowerPanel.addEventListener('mouseenter', () => {
+        clearTimeout(closeMenuTimeout);
+    });
+    battlePowerPanel.addEventListener('mouseleave', () => {
+        scheduleCloseContextMenu();
+    });
+}
+
+function hideBattlePowerPanel() {
+    if (!battlePowerPanel) return;
+    battlePowerPanel.style.display = 'none';
+    battlePowerPanel.innerHTML = '';
+}
+
+async function showBattlePowerPanel(country) {
+    if (!battlePowerPanel || !country || country.id === 'israel') return;
+
+    const menuRect = contextMenu.getBoundingClientRect();
+    battlePowerPanel.style.top = `${menuRect.top}px`;
+    battlePowerPanel.style.left = `${menuRect.left - 230}px`;
+    battlePowerPanel.style.display = 'block';
+    battlePowerPanel.innerHTML = '<div class="battle-power-title">Balance of Power</div><div>Loading...</div>';
+
+    try {
+        const response = await fetch('/api/resolve-battle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                attackerId: 'israel',
+                defenderId: country.id,
+                startedBy: 'israel'
+            })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success || !payload.result) {
+            throw new Error(payload.error || 'Could not resolve battle');
+        }
+
+        const result = payload.result;
+        const attackerScore = Number(result.attacker.score) || 0;
+        const defenderScore = Number(result.defender.score) || 0;
+        const total = attackerScore + defenderScore;
+        const attackerPct = total > 0 ? (attackerScore / total) * 100 : 50;
+        const defenderPct = total > 0 ? (defenderScore / total) * 100 : 50;
+        const winnerLabel = result.winner === 'draw'
+            ? 'Predicted result: Draw'
+            : `Predicted winner: ${result.winner}`;
+
+        battlePowerPanel.innerHTML = `
+            <div class="battle-power-title">Balance of Power</div>
+            <div class="battle-power-row">
+                <div class="battle-power-label"><span>Israel</span><span>${attackerPct.toFixed(1)}%</span></div>
+                <div class="battle-power-bar"><div class="battle-power-fill attacker" style="width: ${attackerPct.toFixed(1)}%;"></div></div>
+            </div>
+            <div class="battle-power-row">
+                <div class="battle-power-label"><span>${country.name[currentLanguage]}</span><span>${defenderPct.toFixed(1)}%</span></div>
+                <div class="battle-power-bar"><div class="battle-power-fill defender" style="width: ${defenderPct.toFixed(1)}%;"></div></div>
+            </div>
+            <div class="battle-power-winner">${winnerLabel}</div>
+        `;
+    } catch (err) {
+        battlePowerPanel.innerHTML = `
+            <div class="battle-power-title">Balance of Power</div>
+            <div>Failed to load</div>
+        `;
+    }
+}
+
 function openContextMenu(country, liElement) {
     clearTimeout(closeMenuTimeout);
+    hideBattlePowerPanel();
     const menuTitle = document.getElementById('context-menu-title');
     const menuStatus = document.getElementById('context-menu-status');
     
@@ -564,8 +635,8 @@ function openContextMenu(country, liElement) {
         }
 
         const isAtWar = diplomacyStatus === 'war';
-        // Disable buttons based on the user's rules
-        btnWar.disabled = isAtWar || gameState.warDeclaredThisTurn;
+        // Keep "At War" hoverable so we can show battle power panel.
+        btnWar.disabled = gameState.warDeclaredThisTurn && !isAtWar;
         btnPeace.disabled = (diplomacyStatus === 'peace') || gameState.warDeclaredThisTurn;
 
         // Never allow click action when already at war.
@@ -574,6 +645,17 @@ function openContextMenu(country, liElement) {
             btnWar.onclick = () => {
                 scheduleCloseContextMenu();
                 declareWar(country);
+            };
+        }
+
+        btnWar.onmouseenter = null;
+        btnWar.onmouseleave = null;
+        if (isAtWar) {
+            btnWar.onmouseenter = () => {
+                showBattlePowerPanel(country);
+            };
+            btnWar.onmouseleave = () => {
+                scheduleCloseContextMenu();
             };
         }
     }
@@ -592,6 +674,7 @@ function openContextMenu(country, liElement) {
 function scheduleCloseContextMenu() {
     closeMenuTimeout = setTimeout(() => {
         contextMenu.classList.remove('visible');
+        hideBattlePowerPanel();
         setTimeout(() => {
             if (!contextMenu.classList.contains('visible')) {
                 contextMenu.style.display = 'none';

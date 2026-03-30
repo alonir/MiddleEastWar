@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const db = require('./db');
+const { resolveBattle } = require('./src/warengine/war-engine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,16 @@ app.post('/api/reset-state', (req, res) => {
     } catch (e) {
         console.error("Failed to reset state:", e);
         res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/resolve-battle', (req, res) => {
+    try {
+        const result = resolveBattle(req.body || {}, db.getCountries());
+        res.json({ success: true, result });
+    } catch (e) {
+        console.error("Failed to resolve battle:", e);
+        res.status(400).json({ success: false, error: e.message });
     }
 });
 
