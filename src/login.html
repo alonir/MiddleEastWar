@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Middle East War</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .card {
+            width: min(420px, 92vw);
+            background: #111827;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        }
+        h1 {
+            margin: 0 0 10px;
+            font-size: 24px;
+        }
+        p {
+            margin: 0 0 16px;
+            color: #cbd5e1;
+        }
+        #error {
+            margin-top: 12px;
+            color: #f87171;
+            min-height: 20px;
+        }
+    </style>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<div class="card">
+    <h1>Sign in to play</h1>
+    <p>Use your Google account. Your game progress is saved per player.</p>
+    <div id="google-signin-button"></div>
+    <div id="error"></div>
+</div>
+
+<script>
+    async function loadConfig() {
+        const res = await fetch('/api/auth/config');
+        const payload = await res.json();
+        if (!res.ok || !payload.success || !payload.googleClientId) {
+            throw new Error(payload.error || 'Missing GOOGLE_CLIENT_ID on server');
+        }
+        const buttonContainer = document.getElementById('google-signin-button');
+        const render = () => {
+            if (!(window.google && google.accounts && google.accounts.id)) {
+                return false;
+            }
+            google.accounts.id.initialize({
+                client_id: payload.googleClientId,
+                callback: handleGoogleCredential
+            });
+            google.accounts.id.renderButton(buttonContainer, {
+                theme: 'outline',
+                size: 'large'
+            });
+            return true;
+        };
+
+        if (!render()) {
+            const timer = setInterval(() => {
+                if (render()) clearInterval(timer);
+            }, 100);
+        }
+    }
+
+    async function handleGoogleCredential(response) {
+        const errorEl = document.getElementById('error');
+        errorEl.textContent = '';
+        try {
+            const res = await fetch('/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential: response.credential })
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.success) {
+                throw new Error(payload.error || 'Login failed');
+            }
+            window.location.href = '/';
+        } catch (e) {
+            errorEl.textContent = e.message || 'Login failed';
+        }
+    }
+
+    loadConfig().catch((e) => {
+        document.getElementById('error').textContent = e.message || 'Could not load login config';
+    });
+</script>
+</body>
+</html>
