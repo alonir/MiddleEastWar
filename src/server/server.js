@@ -1,12 +1,12 @@
 const express = require('express');
 const path = require('path');
-const db = require('./db');
-const { resolveBattle } = require('./src/warengine/war-engine');
+const db = require('../db/db');
+const { resolveBattle } = require('../warengine/war-engine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static(path.join(__dirname, 'src')));
+app.use(express.static(path.join(__dirname, '..')));
 app.use(express.json());
 
 app.get('/api/countries', (req, res) => {

@@ -295,6 +295,19 @@ let gameState = {
     warDeclaredThisTurn: false,
     diplomacy: {}
 };
+let dynamicStrengthByCountry = {};
+
+function getCountryStrength(countryId, diplomacyStatus) {
+    if (dynamicStrengthByCountry[countryId] !== undefined) {
+        return dynamicStrengthByCountry[countryId];
+    }
+    if (countryId === 'israel') return 100;
+    if (diplomacyStatus === 'peace') return 100;
+    if (diplomacyStatus === 'conquered') return 0;
+    if (diplomacyStatus === 'war') return 25;
+    if (diplomacyStatus === 'hostile') return 45;
+    return 70; // neutral/default
+}
 
 function saveState() {
     fetch('/api/save-state', {
@@ -322,7 +335,61 @@ function checkWinCondition() {
 }
 // ------------------
 
-function updateLabels() {
+async function refreshWarStrengths() {
+    const warCountries = countries.filter(
+        c => c.id !== 'israel' && (gameState.diplomacy[c.id] || 'neutral') === 'war'
+    );
+
+    if (warCountries.length === 0) {
+        if (Object.keys(dynamicStrengthByCountry).length > 0) {
+            dynamicStrengthByCountry = {};
+            updateLabels(false);
+        }
+        return;
+    }
+
+    const nextStrengths = {};
+    const israelWarPcts = [];
+
+    await Promise.all(warCountries.map(async (country) => {
+        try {
+            const response = await fetch('/api/resolve-battle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    attackerId: 'israel',
+                    defenderId: country.id,
+                    startedBy: 'israel'
+                })
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success || !payload.result) return;
+
+            const attackerScore = Number(payload.result.attacker.score) || 0;
+            const defenderScore = Number(payload.result.defender.score) || 0;
+            const total = attackerScore + defenderScore;
+            const attackerPct = total > 0 ? Number(((attackerScore / total) * 100).toFixed(1)) : 50;
+            const defenderPct = total > 0 ? Number(((defenderScore / total) * 100).toFixed(1)) : 50;
+
+            israelWarPcts.push(attackerPct);
+            nextStrengths[country.id] = defenderPct;
+        } catch (err) {
+            // Keep fallback status-based strength for this country on transient failures.
+        }
+    }));
+
+    if (israelWarPcts.length > 0) {
+        const avg = israelWarPcts.reduce((sum, val) => sum + val, 0) / israelWarPcts.length;
+        nextStrengths.israel = Number(avg.toFixed(1));
+    }
+
+    if (JSON.stringify(nextStrengths) !== JSON.stringify(dynamicStrengthByCountry)) {
+        dynamicStrengthByCountry = nextStrengths;
+        updateLabels(false);
+    }
+}
+
+function updateLabels(shouldRefreshStrengths = true) {
     // Remove existing markers
     markers.forEach(marker => map.removeLayer(marker));
     markers = [];
@@ -348,7 +415,7 @@ function updateLabels() {
             displayStatus = '<span class="neutral-icon">❌</span>';
         }
 
-        const strength = country.strength !== undefined ? country.strength : 100;
+        const strength = getCountryStrength(country.id, diplomacyStatus);
         let color = '#f44336'; // red
         if (strength > 80) color = '#4CAF50'; // green
         else if (strength > 30) color = '#FFEB3B'; // yellow
@@ -399,6 +466,10 @@ function updateLabels() {
 
         markers.push(marker);
     });
+
+    if (shouldRefreshStrengths) {
+        refreshWarStrengths();
+    }
 }
 
 function updateNewspaper() {
