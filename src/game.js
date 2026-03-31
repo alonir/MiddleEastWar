@@ -282,6 +282,7 @@ const newspaperTranslations = {
 
 let currentLanguage = 'he';
 let markers = [];
+let currentUser = null;
 
 const translations = {
     en: { pop: "Pop", army_reg: "Regular Army", army_res: "Reserves", tanks: "Tanks", aircraft: "Aircraft", navy: "Navy", subs: "Submarines", restart: "Restart Game" },
@@ -315,6 +316,28 @@ function saveState() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gameState)
     }).catch(err => console.error('Failed to save state:', err));
+}
+
+async function loadCurrentUser() {
+    const response = await fetch('/api/auth/me');
+    if (!response.ok) {
+        throw new Error('Not authenticated');
+    }
+    const payload = await response.json();
+    currentUser = payload.user;
+    const playerNameEl = document.getElementById('player-name');
+    if (playerNameEl && currentUser) {
+        playerNameEl.textContent = currentUser.name || currentUser.email;
+    }
+}
+
+async function logout() {
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (_) {
+        // Ignore network errors and continue navigation.
+    }
+    window.location.href = '/login';
 }
 
 function endTurn() {
@@ -967,12 +990,18 @@ async function restartGame() {
 
 document.getElementById('end-turn-btn').addEventListener('click', endTurn);
 document.getElementById('restart-game-btn').addEventListener('click', restartGame);
+document.getElementById('logout-btn').addEventListener('click', logout);
 // -----------------------------------------------
 
 // --- Init: Load state from server then boot the game ---
 async function init() {
     try {
+        await loadCurrentUser();
         const resp = await fetch('/api/game-state');
+        if (resp.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
         if (resp.ok) {
             const serverState = await resp.json();
             gameState.turn = serverState.turn;
@@ -982,6 +1011,8 @@ async function init() {
         }
     } catch(e) {
         console.warn('Could not load game state from server, using defaults.', e);
+        window.location.href = '/login';
+        return;
     }
     updateLabels();
 }

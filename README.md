@@ -9,7 +9,7 @@ npm install
 ## Start the server
 
 ```bash
-bash scripts/start-server.sh
+GOOGLE_CLIENT_ID="your-google-oauth-client-id" SESSION_SECRET="change-me" npm start
 ```
 
 ## Stop the server
@@ -48,4 +48,19 @@ Notes:
 
 - `attackerForcesPct` and `defenderForcesPct` are from `0` to `1`.
 - Winner is decided by weighted military power + rule modifiers from `rules/war-rules.json`.
-.
+
+## Google SSO and per-player saved game
+
+The app now requires Google sign-in before the game is accessible.
+
+Required environment variables:
+
+- `GOOGLE_CLIENT_ID`: Google OAuth client ID used by Google Identity Services.
+- `SESSION_SECRET`: secret key used to sign the session cookie.
+
+Behavior:
+
+- Unauthenticated users are redirected to `/login`.
+- After login, the backend verifies the Google ID token.
+- Users are stored in SQLite (`users` table).
+- Each player has isolated game progress in `player_game_state` by Google user ID (`google_sub`).

@@ -31,32 +31,62 @@ const DEFAULT_STATE = {
 const sqlite = new Database(SQLITE_DB_PATH);
 sqlite.pragma('journal_mode = WAL');
 sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+        google_sub TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        name TEXT NOT NULL,
+        picture TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS player_game_state (
+        google_sub TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(google_sub) REFERENCES users(google_sub) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS app_state (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
-    )
+    );
 `);
 
-const selectStateStmt = sqlite.prepare('SELECT value FROM app_state WHERE key = ?');
-const upsertStateStmt = sqlite.prepare(`
-    INSERT INTO app_state (key, value)
-    VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+const selectLegacyStateStmt = sqlite.prepare('SELECT value FROM app_state WHERE key = ?');
+const upsertUserStmt = sqlite.prepare(`
+    INSERT INTO users (google_sub, email, name, picture, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(google_sub) DO UPDATE SET
+        email = excluded.email,
+        name = excluded.name,
+        picture = excluded.picture,
+        updated_at = CURRENT_TIMESTAMP
+`);
+const selectPlayerStateStmt = sqlite.prepare('SELECT value FROM player_game_state WHERE google_sub = ?');
+const upsertPlayerStateStmt = sqlite.prepare(`
+    INSERT INTO player_game_state (google_sub, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(google_sub) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
 `);
 
-function persistState(state) {
-    upsertStateStmt.run('game_state', JSON.stringify(state));
+function persistStateForUser(googleSub, state) {
+    upsertPlayerStateStmt.run(googleSub, JSON.stringify(state));
 }
 
-function seedOrMigrateStateIfNeeded() {
-    const existing = selectStateStmt.get('game_state');
+function seedOrMigrateLegacyGlobalStateIfNeeded() {
+    const existing = selectLegacyStateStmt.get('game_state');
     if (existing) return;
 
     if (fs.existsSync(LEGACY_JSON_DB_PATH)) {
         try {
             const raw = fs.readFileSync(LEGACY_JSON_DB_PATH, 'utf-8');
             const legacyState = JSON.parse(raw);
-            persistState({ ...DEFAULT_STATE, ...legacyState });
+            sqlite.prepare(`
+                INSERT INTO app_state (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            `).run('game_state', JSON.stringify({ ...DEFAULT_STATE, ...legacyState }));
             console.log('Migrated state from game.db.json to SQLite.');
             return;
         } catch (e) {
@@ -64,40 +94,66 @@ function seedOrMigrateStateIfNeeded() {
         }
     }
 
-    persistState(DEFAULT_STATE);
+    sqlite.prepare(`
+        INSERT INTO app_state (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run('game_state', JSON.stringify(DEFAULT_STATE));
     console.log('Initialized fresh game state in SQLite.');
 }
 
-function getStoredState() {
-    const row = selectStateStmt.get('game_state');
+function getStoredStateForUser(googleSub) {
+    const row = selectPlayerStateStmt.get(googleSub);
     if (!row) return { ...DEFAULT_STATE };
     try {
         const parsed = JSON.parse(row.value);
         return { ...DEFAULT_STATE, ...parsed };
     } catch (e) {
-        console.error('Stored SQLite game state is invalid, resetting to default state.', e);
-        persistState(DEFAULT_STATE);
+        console.error(`Stored SQLite game state is invalid for user ${googleSub}, resetting to default state.`, e);
+        persistStateForUser(googleSub, DEFAULT_STATE);
         return { ...DEFAULT_STATE };
     }
 }
 
-seedOrMigrateStateIfNeeded();
+seedOrMigrateLegacyGlobalStateIfNeeded();
 
 module.exports = {
     getCountries: () => countries,
 
-    getGameState: () => getStoredState(),
+    upsertUser: (user) => {
+        upsertUserStmt.run(user.googleSub, user.email, user.name, user.picture || null);
+    },
 
-    saveGameState: (state) => {
-        const current = getStoredState();
+    getGameState: (googleSub) => {
+        const current = getStoredStateForUser(googleSub);
+        if (!selectPlayerStateStmt.get(googleSub)) {
+            // One-time bootstrap for first login using legacy shared state when present.
+            const legacy = selectLegacyStateStmt.get('game_state');
+            if (legacy) {
+                try {
+                    const parsed = JSON.parse(legacy.value);
+                    const seeded = { ...DEFAULT_STATE, ...parsed };
+                    persistStateForUser(googleSub, seeded);
+                    return seeded;
+                } catch (_) {
+                    // Ignore and return current default.
+                }
+            }
+            persistStateForUser(googleSub, current);
+        }
+        return current;
+    },
+
+    saveGameState: (googleSub, state) => {
+        const current = getStoredStateForUser(googleSub);
         // Merge to avoid wiping fields not sent by client
         const merged = { ...current, ...state };
-        persistState(merged);
+        persistStateForUser(googleSub, merged);
     },
 
     getNewspaper: () => newspaperTranslations,
-    resetGameState: () => {
-        persistState(DEFAULT_STATE);
+    resetGameState: (googleSub) => {
+        persistStateForUser(googleSub, DEFAULT_STATE);
         return DEFAULT_STATE;
     }
 };
