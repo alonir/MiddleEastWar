@@ -16,6 +16,9 @@ set -euo pipefail
 PROJECT_ID="${1:-${GCP_PROJECT_ID:-}}"
 SERVICE_NAME="${2:-${GCP_SERVICE_NAME:-middleeastwar}}"
 REGION="${3:-${GCP_REGION:-}}"
+# Hardcoded auth env values for deployed service.
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-725887797200-5lujm87rhiun0s3t2125e10al9vt6n8s.apps.googleusercontent.com}"
+SESSION_SECRET="${SESSION_SECRET:-3Qp4U2wDk5mJ8xNc9vRf1sTb7hLp0zYe6AaQnMi4}"
 CURRENT_STEP="initialization"
 
 log() {
@@ -90,6 +93,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --region "${REGION}" \
   --allow-unauthenticated \
   --platform managed \
+  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},SESSION_SECRET=${SESSION_SECRET}" \
   --project "${PROJECT_ID}" \
   --quiet
 
