@@ -29,6 +29,9 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
+# Fresh log for each start (append below would otherwise keep growing forever).
+: > "${LOG_FILE}"
+
 nohup node src/server/server.js >> "${LOG_FILE}" 2>&1 &
 SERVER_PID=$!
 echo "${SERVER_PID}" > "${PID_FILE}"

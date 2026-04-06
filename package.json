@@ -2,7 +2,7 @@
   "name": "antigravity",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/server/server.js",
   "scripts": {
     "start": "node src/server/server.js",
     "start:src": "node src/server/server.js",

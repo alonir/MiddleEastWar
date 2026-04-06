@@ -9,8 +9,12 @@ npm install
 ## Start the server
 
 ```bash
-SESSION_SECRET="change-me" npm start
+npm start
 ```
+
+Uses `server.js` at the repo root (or `node src/server/server.js`). If something runs `node server.js`, that file forwards to the real app.
+
+For local dev, `SESSION_SECRET` is optional unless `NODE_ENV=production`: a dev-only default is used and a warning is printed. For anything serious, copy `.env.example` → `.env` and set `SESSION_SECRET` (and optional overrides).
 
 ## Stop the server
 

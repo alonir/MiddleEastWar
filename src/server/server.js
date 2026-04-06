@@ -6,6 +6,15 @@ const { OAuth2Client } = require('google-auth-library');
 const db = require('../db/db');
 const { resolveBattle } = require('../warengine/war-engine');
 
+(function installTimestampedConsole() {
+    const ts = () => new Date().toISOString();
+    for (const name of ['log', 'info', 'warn', 'error', 'debug']) {
+        const orig = console[name];
+        if (typeof orig !== 'function') continue;
+        console[name] = (...args) => orig.apply(console, [`[${ts()}]`, ...args]);
+    }
+})();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,7 +24,7 @@ const DEFAULT_GOOGLE_WEB_CLIENT_ID =
 
 function parseGoogleClientIds() {
     // Cloud Run (and other GCP) set K_SERVICE; ignore GOOGLE_CLIENT_ID env there so a stale
-    // console/env value cannot override the code default after we fix the client id in source.
+    // env value cannot override the code default after we fix the client id in source.
     const fromEnv = (process.env.GOOGLE_CLIENT_ID || '').trim();
     const useEnv = fromEnv && !process.env.K_SERVICE;
     const raw = useEnv ? fromEnv : DEFAULT_GOOGLE_WEB_CLIENT_ID;
@@ -36,10 +45,19 @@ for (const id of googleClientIds) {
     }
 }
 const primaryGoogleClientId = googleClientIds[0] || '';
-const SESSION_SECRET = process.env.SESSION_SECRET;
+
+const isProductionLike = process.env.NODE_ENV === 'production' || Boolean(process.env.K_SERVICE);
+const trimmedSession = (process.env.SESSION_SECRET || '').trim();
+const SESSION_SECRET = trimmedSession
+    || (!isProductionLike
+        ? 'local-dev-session-secret-not-for-production'
+        : '');
 if (!SESSION_SECRET) {
     console.error('SESSION_SECRET is not set. Add it to .env or your hosting env (see .env.example).');
     process.exit(1);
+}
+if (!trimmedSession && !isProductionLike) {
+    console.warn('SESSION_SECRET unset: using a built-in dev default. Set SESSION_SECRET in .env for local sign-in cookies you trust.');
 }
 const oauthClient = new OAuth2Client(primaryGoogleClientId);
 
