@@ -11,11 +11,14 @@ const PORT = process.env.PORT || 3000;
 
 /** OAuth 2.0 Web client ID (public in the browser). Set GOOGLE_CLIENT_ID to override. */
 const DEFAULT_GOOGLE_WEB_CLIENT_ID =
-    '25887797200-sfdh09dhutqmnfq51t79eibtrl3b77j4.apps.googleusercontent.com';
+    '725887797200-sfdh09dhutqmnfq51t79eibtrl3b77j4.apps.googleusercontent.com';
 
 function parseGoogleClientIds() {
+    // Cloud Run (and other GCP) set K_SERVICE; ignore GOOGLE_CLIENT_ID env there so a stale
+    // console/env value cannot override the code default after we fix the client id in source.
     const fromEnv = (process.env.GOOGLE_CLIENT_ID || '').trim();
-    const raw = fromEnv || DEFAULT_GOOGLE_WEB_CLIENT_ID;
+    const useEnv = fromEnv && !process.env.K_SERVICE;
+    const raw = useEnv ? fromEnv : DEFAULT_GOOGLE_WEB_CLIENT_ID;
     return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 

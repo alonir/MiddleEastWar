@@ -18,32 +18,8 @@ SERVICE_NAME="${2:-${GCP_SERVICE_NAME:-middleeastwar}}"
 REGION="${3:-${GCP_REGION:-}}"
 CURRENT_STEP="initialization"
 
-# Same default as src/server/server.js. Override with env GOOGLE_CLIENT_ID when needed.
-DEFAULT_GOOGLE_CLIENT_ID='25887797200-sfdh09dhutqmnfq51t79eibtrl3b77j4.apps.googleusercontent.com'
-GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-${DEFAULT_GOOGLE_CLIENT_ID}}"
+# OAuth Web client ID is read from app source on Cloud Run (see src/server/server.js). Do not set it on the service.
 
-# Web client ID only (APIs & Services → Credentials → OAuth 2.0 Client ID). Not service account JSON "client_id".
-# Normalize pasted secrets (quotes, BOM, newlines) and validate each comma-separated ID.
-if ! GOOGLE_CLIENT_ID="$(
-  printf '%s' "${GOOGLE_CLIENT_ID}" | python3 -c "
-import re, sys
-full = sys.stdin.read().strip().strip('\"').strip(\"'\")
-full = full.lstrip('\ufeff')
-full = ''.join(full.split())
-if not full:
-    sys.exit(1)
-pat = re.compile(r'^\d+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$')
-for part in full.split(','):
-    part = part.strip()
-    if not pat.match(part):
-        sys.exit(1)
-print(full, end='')
-")"; then
-  echo "[sync-to-gcloud] GOOGLE_CLIENT_ID must look like: 123456789-xxxxx.apps.googleusercontent.com"
-  echo "[sync-to-gcloud] (Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs → Web client.)"
-  echo "[sync-to-gcloud] Paste only the Client ID string — no quotes, spaces, or placeholders like [Credentials]."
-  exit 1
-fi
 if [[ -z "${SESSION_SECRET:-}" ]]; then
   echo "[sync-to-gcloud] Set SESSION_SECRET (long random string; never commit it)."
   exit 1
@@ -128,13 +104,12 @@ fi
 CURRENT_STEP="deploy to cloud run"
 # Pass env to Cloud Run via YAML so commas/special characters in secrets are not broken by --set-env-vars.
 RUN_ENV_FILE="$(mktemp)"
-export GOOGLE_CLIENT_ID SESSION_SECRET
+export SESSION_SECRET
 python3 -c '
 import json, os, sys
 path = sys.argv[1]
 with open(path, "w", encoding="utf-8") as f:
-    for name in ("GOOGLE_CLIENT_ID", "SESSION_SECRET"):
-        f.write(f"{name}: {json.dumps(os.environ[name])}\n")
+    f.write(f"SESSION_SECRET: {json.dumps(os.environ['"'"'SESSION_SECRET'"'"'])}\n")
 ' "${RUN_ENV_FILE}"
 
 gcloud run deploy "${SERVICE_NAME}" \
