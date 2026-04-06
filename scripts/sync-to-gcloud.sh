@@ -18,10 +18,10 @@ SERVICE_NAME="${2:-${GCP_SERVICE_NAME:-middleeastwar}}"
 REGION="${3:-${GCP_REGION:-}}"
 CURRENT_STEP="initialization"
 
-if [[ -z "${GOOGLE_CLIENT_ID:-}" ]]; then
-  echo "[sync-to-gcloud] Set GOOGLE_CLIENT_ID (OAuth web client ID from Google Cloud Console)."
-  exit 1
-fi
+# Same default as src/server/server.js. Override with env GOOGLE_CLIENT_ID when needed.
+DEFAULT_GOOGLE_CLIENT_ID='25887797200-sfdh09dhutqmnfq51t79eibtrl3b77j4.apps.googleusercontent.com'
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-${DEFAULT_GOOGLE_CLIENT_ID}}"
+
 # Web client ID only (APIs & Services → Credentials → OAuth 2.0 Client ID). Not service account JSON "client_id".
 # Normalize pasted secrets (quotes, BOM, newlines) and validate each comma-separated ID.
 if ! GOOGLE_CLIENT_ID="$(

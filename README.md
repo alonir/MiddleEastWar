@@ -9,7 +9,7 @@ npm install
 ## Start the server
 
 ```bash
-GOOGLE_CLIENT_ID="your-google-oauth-client-id" SESSION_SECRET="change-me" npm start
+SESSION_SECRET="change-me" npm start
 ```
 
 ## Stop the server
@@ -55,10 +55,11 @@ The app now requires Google sign-in before the game is accessible.
 
 Required environment variables:
 
-- `GOOGLE_CLIENT_ID`: Google OAuth client ID used by Google Identity Services.
 - `SESSION_SECRET`: secret key used to sign the session cookie.
 
-For GitHub Actions deploy to Cloud Run, set `GOOGLE_CLIENT_ID`, `SESSION_SECRET`, and `GCP_SA_KEY` as **Actions → Secrets** (the workflow reads `GOOGLE_CLIENT_ID` from `secrets.GOOGLE_CLIENT_ID` on the deploy step only).
+The Google **Web client ID** is set in code (`src/server/server.js`). Optional: set `GOOGLE_CLIENT_ID` in `.env` to override for local dev.
+
+For GitHub Actions deploy to Cloud Run, set `SESSION_SECRET` and `GCP_SA_KEY` as **Actions → Secrets** (plus `GCP_PROJECT_ID` as secret or variable).
 
 Behavior:
 
