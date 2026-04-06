@@ -64,3 +64,4 @@ Behavior:
 - After login, the backend verifies the Google ID token.
 - Users are stored in SQLite (`users` table).
 - Each player has isolated game progress in `player_game_state` by Google user ID (`google_sub`).
+.
