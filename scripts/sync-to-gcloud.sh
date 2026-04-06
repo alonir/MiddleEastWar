@@ -73,6 +73,12 @@ fail() {
 
 trap fail ERR
 
+RUN_ENV_FILE=""
+cleanup_run_env_file() {
+  [[ -n "${RUN_ENV_FILE}" ]] && rm -f "${RUN_ENV_FILE}"
+}
+trap cleanup_run_env_file EXIT
+
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "gcloud CLI not found. Install it first."
   exit 1
@@ -120,12 +126,23 @@ if ! gcloud services enable \
 fi
 
 CURRENT_STEP="deploy to cloud run"
+# Pass env to Cloud Run via YAML so commas/special characters in secrets are not broken by --set-env-vars.
+RUN_ENV_FILE="$(mktemp)"
+export GOOGLE_CLIENT_ID SESSION_SECRET
+python3 -c '
+import json, os, sys
+path = sys.argv[1]
+with open(path, "w", encoding="utf-8") as f:
+    for name in ("GOOGLE_CLIENT_ID", "SESSION_SECRET"):
+        f.write(f"{name}: {json.dumps(os.environ[name])}\n")
+' "${RUN_ENV_FILE}"
+
 gcloud run deploy "${SERVICE_NAME}" \
   --source . \
   --region "${REGION}" \
   --allow-unauthenticated \
   --platform managed \
-  --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},SESSION_SECRET=${SESSION_SECRET}" \
+  --env-vars-file="${RUN_ENV_FILE}" \
   --project "${PROJECT_ID}" \
   --quiet
 
