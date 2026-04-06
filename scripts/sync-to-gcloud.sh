@@ -40,9 +40,13 @@ fail() {
   echo
   echo "[sync-to-gcloud] Hints:"
   echo "  - Check PROJECT_ID is the project ID string (not project number)."
-  echo "  - Ensure deploy identity has: Cloud Run Admin, Cloud Build Editor,"
-  echo "    Artifact Registry Writer, and Service Account User."
-  echo "  - Ensure billing is enabled and required APIs are allowed."
+  echo "  - gcloud run deploy --source uploads to a GCS bucket (e.g. run-sources-*):"
+  echo "    grant the deploy service account roles/storage.admin (or equivalent bucket access)."
+  echo "  - Also grant: roles/run.admin, roles/cloudbuild.builds.editor,"
+  echo "    roles/artifactregistry.writer, roles/iam.serviceAccountUser."
+  echo "  - If API enable fails: run services enable as a project Owner once, or grant"
+  echo "    roles/serviceusage.serviceUsageAdmin (narrower custom roles are possible)."
+  echo "  - Ensure billing is enabled on the project."
 }
 
 trap fail ERR
