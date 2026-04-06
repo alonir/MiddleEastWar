@@ -77,3 +77,4 @@ login and see files
 
 gcloud run services list --project=middleeastwar
 logs links https://console.cloud.google.com/run/detail/us-central1/middleeastwar/observability/logs?project=middleeastwar
+https://console.cloud.google.com/logs/query;query=resource.type%20%3D%20%22cloud_run_revision%22%0Aresource.labels.service_name%20%3D%20%22middleeastwar%22%0Aresource.labels.location%20%3D%20%22us-central1%22%0A%20severity%3E%3DDEFAULT;storageScope=project;pinnedLogId=2026-04-06T11:33:00.830147Z%2F69d399ec000caac36b9fea75;cursorTimestamp=2026-04-06T11:34:06.670617Z;aroundTime=2026-04-06T11:33:00.830147Z;duration=PT1H?project=middleeastwar

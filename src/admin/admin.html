@@ -70,6 +70,21 @@
             width: 7rem;
             font-size: 14px;
         }
+        #war-rules-json {
+            width: 100%;
+            min-height: 320px;
+            box-sizing: border-box;
+            background: #0c1222;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: ui-monospace, monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            resize: vertical;
+        }
+        #war-rules-err { color: #f87171; font-size: 14px; margin: 10px 0; min-height: 0; }
     </style>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -107,6 +122,17 @@
             <p class="muted">Stored in the database; idle logout applies on the next request for each signed-in player.</p>
             <div id="game-params-err"></div>
             <div id="game-params-body"></div>
+        </div>
+
+        <div class="card">
+            <h2>War engine rules</h2>
+            <p class="muted">JSON stored in the database (<code>app_state.war_engine_rules</code>). Used for every battle resolution. Invalid JSON or shape is rejected.</p>
+            <div id="war-rules-err"></div>
+            <textarea id="war-rules-json" spellcheck="false" aria-label="War engine rules JSON"></textarea>
+            <div class="toolbar" style="margin-top:12px;">
+                <button type="button" id="btn-war-rules-save">Save rules</button>
+                <button type="button" id="btn-war-rules-reset">Restore bundled defaults</button>
+            </div>
         </div>
 
         <div class="card">
@@ -414,9 +440,10 @@
     }
 
     async function loadDashboard() {
-        const [playersRes, paramsRes] = await Promise.all([
+        const [playersRes, paramsRes, warRes] = await Promise.all([
             fetch(api('/api/admin/players'), { credentials: 'include' }),
-            fetch(api('/api/admin/game-parameters'), { credentials: 'include' })
+            fetch(api('/api/admin/game-parameters'), { credentials: 'include' }),
+            fetch(api('/api/admin/war-rules'), { credentials: 'include' })
         ]);
         if (playersRes.status === 401) {
             show('panel-login');
@@ -447,6 +474,83 @@
             }
         } else {
             $('game-params-err').textContent = 'Could not load game parameters.';
+        }
+
+        if (warRes.status === 401) {
+            show('panel-login');
+            $('error').textContent = 'Session expired. Sign in again.';
+            return;
+        }
+        if (warRes.ok) {
+            const wData = await readJsonOrThrow(warRes, 'GET /api/admin/war-rules');
+            if (wData.success && wData.rules) {
+                renderWarRulesEditor(wData.rules);
+            } else {
+                $('war-rules-err').textContent = wData.error || 'Failed to load war rules.';
+            }
+        } else {
+            $('war-rules-err').textContent = 'Could not load war rules.';
+        }
+    }
+
+    function renderWarRulesEditor(rules) {
+        $('war-rules-json').value = JSON.stringify(rules, null, 2);
+        $('war-rules-err').textContent = '';
+    }
+
+    async function saveWarRules() {
+        $('war-rules-err').textContent = '';
+        let parsed;
+        try {
+            parsed = JSON.parse($('war-rules-json').value);
+        } catch (e) {
+            $('war-rules-err').textContent = 'Invalid JSON: ' + (e.message || String(e));
+            return;
+        }
+        try {
+            const res = await fetch(api('/api/admin/war-rules'), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ rules: parsed })
+            });
+            if (res.status === 401) {
+                show('panel-login');
+                $('error').textContent = 'Session expired. Sign in again.';
+                return;
+            }
+            const data = await readJsonOrThrow(res, 'PUT /api/admin/war-rules');
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Save failed');
+            }
+            renderWarRulesEditor(data.rules);
+        } catch (e) {
+            $('war-rules-err').textContent = e.message || 'Save failed';
+        }
+    }
+
+    async function resetWarRulesDefaults() {
+        if (!confirm('Replace database rules with the defaults shipped in war-rules.json?')) return;
+        $('war-rules-err').textContent = '';
+        try {
+            const res = await fetch(api('/api/admin/war-rules/reset-defaults'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: '{}'
+            });
+            if (res.status === 401) {
+                show('panel-login');
+                $('error').textContent = 'Session expired. Sign in again.';
+                return;
+            }
+            const data = await readJsonOrThrow(res, 'POST /api/admin/war-rules/reset-defaults');
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Reset failed');
+            }
+            renderWarRulesEditor(data.rules);
+        } catch (e) {
+            $('war-rules-err').textContent = e.message || 'Reset failed';
         }
     }
 
@@ -512,6 +616,12 @@
     });
     document.getElementById('btn-restart-server').addEventListener('click', () => {
         restartServer().catch((e) => alert(e.message));
+    });
+    document.getElementById('btn-war-rules-save').addEventListener('click', () => {
+        saveWarRules().catch((e) => { $('war-rules-err').textContent = e.message || 'Save failed'; });
+    });
+    document.getElementById('btn-war-rules-reset').addEventListener('click', () => {
+        resetWarRulesDefaults().catch((e) => { $('war-rules-err').textContent = e.message || 'Reset failed'; });
     });
 
     (async function init() {

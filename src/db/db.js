@@ -1,7 +1,10 @@
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const { validateWarRules, readDefaultWarRules } = require('../warengine/war-engine');
 const { countries, newspaperTranslations } = require('./data');
+
+const WAR_RULES_APP_STATE_KEY = 'war_engine_rules';
 
 const SQLITE_DB_PATH = path.join(__dirname, 'game.db.sqlite');
 const LEGACY_JSON_DB_PATH = path.join(__dirname, 'game.db.json');
@@ -144,6 +147,10 @@ const updateGameParameterStmt = sqlite.prepare(`
 `);
 
 const selectLegacyStateStmt = sqlite.prepare('SELECT value FROM app_state WHERE key = ?');
+const upsertAppStateStmt = sqlite.prepare(`
+    INSERT INTO app_state (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+`);
 const upsertUserStmt = sqlite.prepare(`
     INSERT INTO users (google_sub, email, name, picture, updated_at)
     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -222,6 +229,17 @@ function seedOrMigrateLegacyGlobalStateIfNeeded() {
     console.log('Initialized fresh game state in SQLite.');
 }
 
+function seedWarEngineRulesIfNeeded() {
+    const row = selectLegacyStateStmt.get(WAR_RULES_APP_STATE_KEY);
+    if (row && row.value) return;
+    try {
+        const defaults = readDefaultWarRules();
+        upsertAppStateStmt.run(WAR_RULES_APP_STATE_KEY, JSON.stringify(defaults));
+    } catch (e) {
+        console.error('Could not seed war engine rules from war-rules.json:', e);
+    }
+}
+
 function getStoredStateForUser(googleSub) {
     const row = selectPlayerStateStmt.get(googleSub);
     if (!row) return { ...DEFAULT_STATE };
@@ -236,6 +254,7 @@ function getStoredStateForUser(googleSub) {
 }
 
 seedOrMigrateLegacyGlobalStateIfNeeded();
+seedWarEngineRulesIfNeeded();
 
 module.exports = {
     getCountries: () => countries,
@@ -443,6 +462,42 @@ module.exports = {
         if (!Number.isFinite(minutes) || minutes < 1) minutes = 60;
         if (minutes > 7 * 24 * 60) minutes = 7 * 24 * 60;
         return minutes * 60 * 1000;
+    },
+
+    getWarEngineRules: () => {
+        const row = selectLegacyStateStmt.get(WAR_RULES_APP_STATE_KEY);
+        if (!row || !row.value) {
+            return readDefaultWarRules();
+        }
+        try {
+            const parsed = JSON.parse(row.value);
+            const err = validateWarRules(parsed);
+            if (err) {
+                console.error('War rules in DB invalid, using file default:', err);
+                return readDefaultWarRules();
+            }
+            return parsed;
+        } catch (e) {
+            console.error('War rules JSON parse failed, using file default:', e);
+            return readDefaultWarRules();
+        }
+    },
+
+    setWarEngineRules: (rules) => {
+        const err = validateWarRules(rules);
+        if (err) return { ok: false, error: err };
+        upsertAppStateStmt.run(WAR_RULES_APP_STATE_KEY, JSON.stringify(rules));
+        return { ok: true };
+    },
+
+    resetWarEngineRulesToBundledDefault: () => {
+        try {
+            const defaults = readDefaultWarRules();
+            upsertAppStateStmt.run(WAR_RULES_APP_STATE_KEY, JSON.stringify(defaults));
+            return { ok: true, rules: defaults };
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
     },
 
     /** Admin dashboard: who has an active session vs all registered players. */

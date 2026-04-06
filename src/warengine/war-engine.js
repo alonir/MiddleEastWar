@@ -3,9 +3,59 @@ const path = require("path");
 
 const RULES_PATH = path.join(__dirname, "war-rules.json");
 
-function loadRules() {
+function readDefaultWarRules() {
     const raw = fs.readFileSync(RULES_PATH, "utf-8");
     return JSON.parse(raw);
+}
+
+/**
+ * @param {unknown} r
+ * @returns {string | null} error message, or null if valid
+ */
+function validateWarRules(r) {
+    if (!r || typeof r !== "object") {
+        return "Rules must be a non-null object";
+    }
+    const { defaults, weights, modifiers, decision } = r;
+    if (!defaults || typeof defaults !== "object") {
+        return "Missing defaults object";
+    }
+    for (const k of ["attackerForcesPct", "defenderForcesPct"]) {
+        const v = defaults[k];
+        if (typeof v !== "number" || !Number.isFinite(v)) {
+            return `defaults.${k} must be a finite number`;
+        }
+    }
+    if (!weights || typeof weights !== "object") {
+        return "Missing weights object";
+    }
+    for (const k of ["regularArmy", "reserves", "tanks", "aircraft", "navy", "submarines"]) {
+        const v = weights[k];
+        if (typeof v !== "number" || !Number.isFinite(v)) {
+            return `weights.${k} must be a finite number`;
+        }
+    }
+    if (!modifiers || typeof modifiers !== "object") {
+        return "Missing modifiers object";
+    }
+    for (const k of [
+        "warInitiatorBonus",
+        "homeDefenseBonus",
+        "overcommitPenaltyThreshold",
+        "overcommitPenaltyMultiplier"
+    ]) {
+        const v = modifiers[k];
+        if (typeof v !== "number" || !Number.isFinite(v)) {
+            return `modifiers.${k} must be a finite number`;
+        }
+    }
+    if (!decision || typeof decision !== "object") {
+        return "Missing decision object";
+    }
+    if (typeof decision.drawMarginPct !== "number" || !Number.isFinite(decision.drawMarginPct)) {
+        return "decision.drawMarginPct must be a finite number";
+    }
+    return null;
 }
 
 function parseNumber(value) {
@@ -52,8 +102,8 @@ function computeBasePower(country, weights) {
     );
 }
 
-function resolveBattle(input, countries) {
-    const rules = loadRules();
+function resolveBattle(input, countries, rules) {
+    const effectiveRules = rules || readDefaultWarRules();
     const attacker = countries.find((c) => c.id === input.attackerId);
     const defender = countries.find((c) => c.id === input.defenderId);
 
@@ -66,32 +116,32 @@ function resolveBattle(input, countries) {
 
     const attackerPct = safePct(
         input.attackerForcesPct,
-        rules.defaults.attackerForcesPct
+        effectiveRules.defaults.attackerForcesPct
     );
     const defenderPct = safePct(
         input.defenderForcesPct,
-        rules.defaults.defenderForcesPct
+        effectiveRules.defaults.defenderForcesPct
     );
 
-    const attackerBase = computeBasePower(attacker, rules.weights);
-    const defenderBase = computeBasePower(defender, rules.weights);
+    const attackerBase = computeBasePower(attacker, effectiveRules.weights);
+    const defenderBase = computeBasePower(defender, effectiveRules.weights);
 
     let attackerScore = attackerBase * attackerPct;
     let defenderScore = defenderBase * defenderPct;
 
     if (input.startedBy === attacker.id) {
-        attackerScore *= rules.modifiers.warInitiatorBonus;
+        attackerScore *= effectiveRules.modifiers.warInitiatorBonus;
     } else if (input.startedBy === defender.id) {
-        defenderScore *= rules.modifiers.warInitiatorBonus;
+        defenderScore *= effectiveRules.modifiers.warInitiatorBonus;
     }
 
-    defenderScore *= rules.modifiers.homeDefenseBonus;
+    defenderScore *= effectiveRules.modifiers.homeDefenseBonus;
 
-    if (attackerPct > rules.modifiers.overcommitPenaltyThreshold) {
-        attackerScore *= rules.modifiers.overcommitPenaltyMultiplier;
+    if (attackerPct > effectiveRules.modifiers.overcommitPenaltyThreshold) {
+        attackerScore *= effectiveRules.modifiers.overcommitPenaltyMultiplier;
     }
-    if (defenderPct > rules.modifiers.overcommitPenaltyThreshold) {
-        defenderScore *= rules.modifiers.overcommitPenaltyMultiplier;
+    if (defenderPct > effectiveRules.modifiers.overcommitPenaltyThreshold) {
+        defenderScore *= effectiveRules.modifiers.overcommitPenaltyMultiplier;
     }
 
     const gap = attackerScore - defenderScore;
@@ -99,7 +149,7 @@ function resolveBattle(input, countries) {
     const margin = maxScore > 0 ? Math.abs(gap) / maxScore : 0;
 
     let winner = "draw";
-    if (margin > rules.decision.drawMarginPct) {
+    if (margin > effectiveRules.decision.drawMarginPct) {
         winner = gap > 0 ? attacker.id : defender.id;
     }
 
@@ -117,10 +167,10 @@ function resolveBattle(input, countries) {
         },
         details: {
             startedBy: input.startedBy || null,
-            rulesVersion: "v1"
+            rulesVersion: rules ? "database" : "file-default"
         }
     };
 }
 
-module.exports = { resolveBattle };
+module.exports = { resolveBattle, validateWarRules, readDefaultWarRules };
 

@@ -417,6 +417,35 @@ app.post('/api/admin/restart-server', requireApiUser, requireAdmin, (req, res) =
     }, 400);
 });
 
+app.get('/api/admin/war-rules', requireApiUser, requireAdmin, (req, res) => {
+    try {
+        res.json({ success: true, rules: db.getWarEngineRules() });
+    } catch (e) {
+        console.error('Admin war-rules GET failed:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.put('/api/admin/war-rules', requireApiUser, requireAdmin, (req, res) => {
+    const rules = req.body && req.body.rules;
+    if (!rules || typeof rules !== 'object' || Array.isArray(rules)) {
+        return res.status(400).json({ success: false, error: 'Body must include a rules object' });
+    }
+    const result = db.setWarEngineRules(rules);
+    if (!result.ok) {
+        return res.status(400).json({ success: false, error: result.error });
+    }
+    res.json({ success: true, rules: db.getWarEngineRules() });
+});
+
+app.post('/api/admin/war-rules/reset-defaults', requireApiUser, requireAdmin, (req, res) => {
+    const result = db.resetWarEngineRulesToBundledDefault();
+    if (!result.ok) {
+        return res.status(500).json({ success: false, error: result.error });
+    }
+    res.json({ success: true, rules: result.rules });
+});
+
 app.use(requireAuth);
 app.use(express.static(path.join(__dirname, '..'), { index: false }));
 
@@ -458,7 +487,7 @@ app.post('/api/reset-state', (req, res) => {
 
 app.post('/api/resolve-battle', (req, res) => {
     try {
-        const result = resolveBattle(req.body || {}, db.getCountries());
+        const result = resolveBattle(req.body || {}, db.getCountries(), db.getWarEngineRules());
         res.json({ success: true, result });
     } catch (e) {
         console.error("Failed to resolve battle:", e);
