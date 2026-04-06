@@ -16,10 +16,16 @@ set -euo pipefail
 PROJECT_ID="${1:-${GCP_PROJECT_ID:-}}"
 SERVICE_NAME="${2:-${GCP_SERVICE_NAME:-middleeastwar}}"
 REGION="${3:-${GCP_REGION:-}}"
-# Hardcoded auth env values for deployed service.
-GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-725887797200-5lujm87rhiun0s3t2125e10al9vt6n8s.apps.googleusercontent.com}"
-SESSION_SECRET="${SESSION_SECRET:-3Qp4U2wDk5mJ8xNc9vRf1sTb7hLp0zYe6AaQnMi4}"
 CURRENT_STEP="initialization"
+
+if [[ -z "${GOOGLE_CLIENT_ID:-}" ]]; then
+  echo "[sync-to-gcloud] Set GOOGLE_CLIENT_ID (OAuth web client ID from Google Cloud Console)."
+  exit 1
+fi
+if [[ -z "${SESSION_SECRET:-}" ]]; then
+  echo "[sync-to-gcloud] Set SESSION_SECRET (long random string; never commit it)."
+  exit 1
+fi
 
 log() {
   echo "[sync-to-gcloud] $*"

@@ -16,7 +16,11 @@ function parseGoogleClientIds() {
 
 const googleClientIds = parseGoogleClientIds();
 const primaryGoogleClientId = googleClientIds[0] || '';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+    console.error('SESSION_SECRET is not set. Add it to .env or your hosting env (see .env.example).');
+    process.exit(1);
+}
 const oauthClient = new OAuth2Client(primaryGoogleClientId);
 
 const sessionCookieSecure = process.env.COOKIE_SECURE === 'true'

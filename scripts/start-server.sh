@@ -21,12 +21,12 @@ if lsof -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1; then
   exit 1
 fi
 
-# Hardcoded local default Google OAuth client ID.
-export GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-725887797200-5lujm87rhiun0s3t2125e10al9vt6n8s.apps.googleusercontent.com}"
-
-if [[ -z "${SESSION_SECRET:-}" ]]; then
-  # Local fallback secret so auth cookies can be signed; replace in production.
-  export SESSION_SECRET="3Qp4U2wDk5mJ8xNc9vRf1sTb7hLp0zYe6AaQnMi4"
+# Load .env into this shell so nohup inherits GOOGLE_CLIENT_ID / SESSION_SECRET (optional; server also loads .env via dotenv).
+if [[ -f "${ROOT_DIR}/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${ROOT_DIR}/.env"
+  set +a
 fi
 
 nohup node src/server/server.js >> "${LOG_FILE}" 2>&1 &

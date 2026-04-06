@@ -13,6 +13,8 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_SERVICE_NAME: middleeastwar
       GCP_REGION: us-central1
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
     permissions:
       contents: read
 
@@ -28,6 +30,14 @@ jobs:
           fi
           if [ -z "${GCP_PROJECT_ID}" ]; then
             echo "Missing GitHub secret: GCP_PROJECT_ID"
+            exit 1
+          fi
+          if [ -z "${GOOGLE_CLIENT_ID}" ]; then
+            echo "Missing GitHub secret: GOOGLE_CLIENT_ID"
+            exit 1
+          fi
+          if [ -z "${SESSION_SECRET}" ]; then
+            echo "Missing GitHub secret: SESSION_SECRET"
             exit 1
           fi
 
