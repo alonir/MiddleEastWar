@@ -23,12 +23,25 @@ if [[ -z "${GOOGLE_CLIENT_ID:-}" ]]; then
   exit 1
 fi
 # Web client ID only (APIs & Services → Credentials → OAuth 2.0 Client ID). Not service account JSON "client_id".
-GOOGLE_CLIENT_ID_FIRST="${GOOGLE_CLIENT_ID%%,*}"
-GOOGLE_CLIENT_ID_FIRST="${GOOGLE_CLIENT_ID_FIRST//[[:space:]]/}"
-if [[ ! "${GOOGLE_CLIENT_ID_FIRST}" =~ ^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$ ]]; then
+# Normalize pasted secrets (quotes, BOM, newlines) and validate each comma-separated ID.
+if ! GOOGLE_CLIENT_ID="$(
+  printf '%s' "${GOOGLE_CLIENT_ID}" | python3 -c "
+import re, sys
+full = sys.stdin.read().strip().strip('\"').strip(\"'\")
+full = full.lstrip('\ufeff')
+full = ''.join(full.split())
+if not full:
+    sys.exit(1)
+pat = re.compile(r'^\d+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$')
+for part in full.split(','):
+    part = part.strip()
+    if not pat.match(part):
+        sys.exit(1)
+print(full, end='')
+")"; then
   echo "[sync-to-gcloud] GOOGLE_CLIENT_ID must look like: 123456789-xxxxx.apps.googleusercontent.com"
   echo "[sync-to-gcloud] (Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs → Web client.)"
-  echo "[sync-to-gcloud] Do not use [Credentials], service account numbers, or other placeholders."
+  echo "[sync-to-gcloud] Paste only the Client ID string — no quotes, spaces, or placeholders like [Credentials]."
   exit 1
 fi
 if [[ -z "${SESSION_SECRET:-}" ]]; then
