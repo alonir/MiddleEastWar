@@ -49,7 +49,7 @@
 
 <script>
     async function loadConfig() {
-        const res = await fetch('/api/auth/config');
+        const res = await fetch('/api/auth/config', { credentials: 'include' });
         const payload = await res.json();
         if (!res.ok || !payload.success || !payload.googleClientId) {
             throw new Error(payload.error || 'Missing GOOGLE_CLIENT_ID on server');
@@ -61,19 +61,29 @@
             }
             google.accounts.id.initialize({
                 client_id: payload.googleClientId,
-                callback: handleGoogleCredential
+                callback: handleGoogleCredential,
+                auto_select: true,
+                context: 'signin',
+                use_fedcm_for_prompt: true,
+                ux_mode: 'popup'
             });
             google.accounts.id.renderButton(buttonContainer, {
                 theme: 'outline',
-                size: 'large'
+                size: 'large',
+                type: 'standard',
+                text: 'signin_with',
+                shape: 'rectangular',
+                logo_alignment: 'left'
             });
+            google.accounts.id.prompt();
             return true;
         };
 
         if (!render()) {
             const timer = setInterval(() => {
                 if (render()) clearInterval(timer);
-            }, 100);
+            }, 200);
+            setTimeout(() => clearInterval(timer), 15000);
         }
     }
 
@@ -84,6 +94,7 @@
             const res = await fetch('/api/auth/google', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ credential: response.credential })
             });
             const payload = await res.json();

@@ -310,16 +310,30 @@ function getCountryStrength(countryId, diplomacyStatus) {
     return 70; // neutral/default
 }
 
+const withCredentials = { credentials: 'include' };
+
 function saveState() {
     fetch('/api/save-state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gameState)
+        body: JSON.stringify(gameState),
+        ...withCredentials
     }).catch(err => console.error('Failed to save state:', err));
 }
 
+async function isAppServerReachable() {
+    try {
+        const response = await fetch('/api/auth/config', withCredentials);
+        if (!response.ok) return false;
+        const payload = await response.json();
+        return Boolean(payload && payload.success);
+    } catch {
+        return false;
+    }
+}
+
 async function loadCurrentUser() {
-    const response = await fetch('/api/auth/me');
+    const response = await fetch('/api/auth/me', withCredentials);
     if (!response.ok) {
         throw new Error('Not authenticated');
     }
@@ -331,9 +345,35 @@ async function loadCurrentUser() {
     }
 }
 
+function loadGoogleIdentityScript() {
+    if (window.google?.accounts?.id) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const src = 'https://accounts.google.com/gsi/client';
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing) {
+            existing.addEventListener('load', () => resolve());
+            existing.addEventListener('error', () => reject(new Error('Google script load error')));
+            return;
+        }
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        s.defer = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Google script load error'));
+        document.head.appendChild(s);
+    });
+}
+
 async function logout() {
     try {
-        await fetch('/api/auth/logout', { method: 'POST' });
+        await loadGoogleIdentityScript();
+        window.google?.accounts?.id?.disableAutoSelect();
+    } catch (_) {
+        // GIS optional; server session logout still applies.
+    }
+    try {
+        await fetch('/api/auth/logout', { method: 'POST', ...withCredentials });
     } catch (_) {
         // Ignore network errors and continue navigation.
     }
@@ -383,7 +423,8 @@ async function refreshWarStrengths() {
                     attackerId: 'israel',
                     defenderId: country.id,
                     startedBy: 'israel'
-                })
+                }),
+                ...withCredentials
             });
             const payload = await response.json();
             if (!response.ok || !payload.success || !payload.result) return;
@@ -680,7 +721,8 @@ async function showBattlePowerPanel(country) {
                 attackerId: 'israel',
                 defenderId: country.id,
                 startedBy: 'israel'
-            })
+            }),
+            ...withCredentials
         });
         const payload = await response.json();
         if (!response.ok || !payload.success || !payload.result) {
@@ -963,7 +1005,7 @@ async function restartGame() {
     
     if (confirm(messages[currentLanguage])) {
         try {
-            const resp = await fetch('/api/reset-state', { method: 'POST' });
+            const resp = await fetch('/api/reset-state', { method: 'POST', ...withCredentials });
             if (resp.ok) {
                 const data = await resp.json();
                 gameState = data.state;
@@ -996,8 +1038,17 @@ document.getElementById('logout-btn').addEventListener('click', logout);
 // --- Init: Load state from server then boot the game ---
 async function init() {
     try {
+        const serverOk = await isAppServerReachable();
+        if (!serverOk) {
+            const hint = window.location.protocol === 'file:'
+                ? 'Do not open index.html as a file. Run `npm start` and open http://localhost:3000'
+                : 'Run `npm start` in the project folder and open http://localhost:3000 (not a static-only server on another port).';
+            console.error('Game API not reachable.', hint);
+            alert(hint);
+            return;
+        }
         await loadCurrentUser();
-        const resp = await fetch('/api/game-state');
+        const resp = await fetch('/api/game-state', withCredentials);
         if (resp.status === 401) {
             window.location.href = '/login';
             return;
@@ -1009,8 +1060,8 @@ async function init() {
             gameState.diplomacy = serverState.diplomacy;
             console.log('Game state loaded from server:', gameState);
         }
-    } catch(e) {
-        console.warn('Could not load game state from server, using defaults.', e);
+    } catch (e) {
+        console.warn('Session or game load failed; sending you to login.', e);
         window.location.href = '/login';
         return;
     }

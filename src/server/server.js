@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cookieSession = require('cookie-session');
@@ -7,9 +8,22 @@ const { resolveBattle } = require('../warengine/war-engine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+
+function parseGoogleClientIds() {
+    const raw = process.env.GOOGLE_CLIENT_ID || '';
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+const googleClientIds = parseGoogleClientIds();
+const primaryGoogleClientId = googleClientIds[0] || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
-const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+const oauthClient = new OAuth2Client(primaryGoogleClientId);
+
+const sessionCookieSecure = process.env.COOKIE_SECURE === 'true'
+    ? true
+    : process.env.COOKIE_SECURE === 'false'
+        ? false
+        : process.env.NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
 app.use(cookieSession({
@@ -17,7 +31,7 @@ app.use(cookieSession({
     keys: [SESSION_SECRET],
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: sessionCookieSecure,
     maxAge: 7 * 24 * 60 * 60 * 1000
 }));
 app.use(express.json());
@@ -45,16 +59,23 @@ app.get('/healthz', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
+    if (req.session && req.session.user) {
+        return res.redirect('/');
+    }
     res.sendFile(path.join(__dirname, '..', 'login.html'));
 });
 
 app.get('/api/auth/config', (req, res) => {
-    res.json({ success: true, googleClientId: GOOGLE_CLIENT_ID });
+    res.json({
+        success: true,
+        googleClientId: primaryGoogleClientId,
+        googleSsoConfigured: Boolean(primaryGoogleClientId)
+    });
 });
 
 app.post('/api/auth/google', async (req, res) => {
     try {
-        if (!GOOGLE_CLIENT_ID) {
+        if (!primaryGoogleClientId) {
             return res.status(500).json({ success: false, error: 'GOOGLE_CLIENT_ID is not configured' });
         }
         const { credential } = req.body || {};
@@ -62,9 +83,10 @@ app.post('/api/auth/google', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Missing Google credential token' });
         }
 
+        const audience = googleClientIds.length > 1 ? googleClientIds : primaryGoogleClientId;
         const ticket = await oauthClient.verifyIdToken({
             idToken: credential,
-            audience: GOOGLE_CLIENT_ID
+            audience
         });
         const payload = ticket.getPayload();
         if (!payload || !payload.sub || !payload.email) {
