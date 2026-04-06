@@ -24,20 +24,16 @@ jobs:
 
       - name: Validate required secrets
         run: |
-          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
-            echo "Missing GitHub secret: GCP_SA_KEY"
-            exit 1
-          fi
-          if [ -z "${GCP_PROJECT_ID}" ]; then
-            echo "Missing GitHub secret: GCP_PROJECT_ID"
-            exit 1
-          fi
-          if [ -z "${GOOGLE_CLIENT_ID}" ]; then
-            echo "Missing GitHub secret: GOOGLE_CLIENT_ID"
-            exit 1
-          fi
-          if [ -z "${SESSION_SECRET}" ]; then
-            echo "Missing GitHub secret: SESSION_SECRET"
+          missing=""
+          # GCP_SA_KEY is only in secrets.* context (not copied to env — avoids huge env).
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then missing="${missing} GCP_SA_KEY"; fi
+          if [ -z "${GCP_PROJECT_ID}" ]; then missing="${missing} GCP_PROJECT_ID"; fi
+          if [ -z "${GOOGLE_CLIENT_ID}" ]; then missing="${missing} GOOGLE_CLIENT_ID"; fi
+          if [ -z "${SESSION_SECRET}" ]; then missing="${missing} SESSION_SECRET"; fi
+          if [ -n "${missing}" ]; then
+            echo "Add these in GitHub: Settings → Secrets and variables → Actions → Repository secrets"
+            echo "(names must match exactly, including underscores):"
+            echo "${missing}" | tr ' ' '\n' | sed '/^$/d' | sort -u
             exit 1
           fi
 
