@@ -14,7 +14,19 @@ function parseGoogleClientIds() {
     return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+const WEB_CLIENT_ID_RE = /^\d+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/;
+
 const googleClientIds = parseGoogleClientIds();
+for (const id of googleClientIds) {
+    if (!WEB_CLIENT_ID_RE.test(id)) {
+        console.error(
+            'Invalid GOOGLE_CLIENT_ID. Use the OAuth 2.0 Web client ID from Google Cloud Console '
+            + '(APIs & Services → Credentials), e.g. 123456789-xxxxx.apps.googleusercontent.com. '
+            + `Got: "${id.substring(0, 40)}${id.length > 40 ? '…' : ''}"`
+        );
+        process.exit(1);
+    }
+}
 const primaryGoogleClientId = googleClientIds[0] || '';
 const SESSION_SECRET = process.env.SESSION_SECRET;
 if (!SESSION_SECRET) {

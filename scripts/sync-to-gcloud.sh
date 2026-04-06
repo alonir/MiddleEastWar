@@ -22,6 +22,15 @@ if [[ -z "${GOOGLE_CLIENT_ID:-}" ]]; then
   echo "[sync-to-gcloud] Set GOOGLE_CLIENT_ID (OAuth web client ID from Google Cloud Console)."
   exit 1
 fi
+# Web client ID only (APIs & Services → Credentials → OAuth 2.0 Client ID). Not service account JSON "client_id".
+GOOGLE_CLIENT_ID_FIRST="${GOOGLE_CLIENT_ID%%,*}"
+GOOGLE_CLIENT_ID_FIRST="${GOOGLE_CLIENT_ID_FIRST//[[:space:]]/}"
+if [[ ! "${GOOGLE_CLIENT_ID_FIRST}" =~ ^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$ ]]; then
+  echo "[sync-to-gcloud] GOOGLE_CLIENT_ID must look like: 123456789-xxxxx.apps.googleusercontent.com"
+  echo "[sync-to-gcloud] (Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs → Web client.)"
+  echo "[sync-to-gcloud] Do not use [Credentials], service account numbers, or other placeholders."
+  exit 1
+fi
 if [[ -z "${SESSION_SECRET:-}" ]]; then
   echo "[sync-to-gcloud] Set SESSION_SECRET (long random string; never commit it)."
   exit 1
@@ -40,8 +49,8 @@ fail() {
   echo
   echo "[sync-to-gcloud] Hints:"
   echo "  - Check PROJECT_ID is the project ID string (not project number)."
-  echo "  - gcloud run deploy --source uploads to a GCS bucket (e.g. run-sources-*):"
-  echo "    grant the deploy service account roles/storage.admin (or equivalent bucket access)."
+  echo "  - gcloud run deploy --source needs project-level storage.buckets.list plus bucket access:"
+  echo "    grant roles/storage.admin on the PROJECT (not only on the run-sources-* bucket)."
   echo "  - Also grant: roles/run.admin, roles/cloudbuild.builds.editor,"
   echo "    roles/artifactregistry.writer, roles/iam.serviceAccountUser."
   echo "  - If API enable fails: run services enable as a project Owner once, or grant"

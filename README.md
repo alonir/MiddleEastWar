@@ -58,6 +58,8 @@ Required environment variables:
 - `GOOGLE_CLIENT_ID`: Google OAuth client ID used by Google Identity Services.
 - `SESSION_SECRET`: secret key used to sign the session cookie.
 
+For GitHub Actions deploy to Cloud Run, set `GOOGLE_CLIENT_ID` (and `SESSION_SECRET`, `GCP_SA_KEY`, etc.) as **Actions secrets**, not variables.
+
 Behavior:
 
 - Unauthenticated users are redirected to `/login`.
