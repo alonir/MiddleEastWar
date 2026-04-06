@@ -39,6 +39,31 @@ sqlite.exec(`
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    -- One row per signed-in browser/device; game data stays isolated per google_sub in player_game_state.
+    CREATE TABLE IF NOT EXISTS active_sessions (
+        session_key TEXT PRIMARY KEY,
+        google_sub TEXT NOT NULL,
+        email TEXT,
+        logged_in_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        ip TEXT,
+        user_agent TEXT,
+        FOREIGN KEY(google_sub) REFERENCES users(google_sub) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_active_sessions_google_sub ON active_sessions(google_sub);
+    CREATE INDEX IF NOT EXISTS idx_active_sessions_last_seen ON active_sessions(last_seen_at);
+    CREATE TABLE IF NOT EXISTS auth_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        google_sub TEXT NOT NULL,
+        email TEXT,
+        event TEXT NOT NULL,
+        session_key TEXT,
+        ip TEXT,
+        user_agent TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_audit_google_sub ON auth_audit(google_sub);
+    CREATE INDEX IF NOT EXISTS idx_auth_audit_occurred ON auth_audit(occurred_at);
     CREATE TABLE IF NOT EXISTS player_game_state (
         google_sub TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -49,6 +74,72 @@ sqlite.exec(`
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS session_revocations (
+        session_key TEXT PRIMARY KEY,
+        revoked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT
+    );
+    CREATE TABLE IF NOT EXISTS game_parameters (
+        param_key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        description TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+`);
+
+function migrateSchema() {
+    const cols = (table) => sqlite.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!cols('users').includes('auth_version')) {
+        sqlite.exec('ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!cols('active_sessions').includes('country_code')) {
+        sqlite.exec('ALTER TABLE active_sessions ADD COLUMN country_code TEXT');
+    }
+    if (!cols('auth_audit').includes('country_code')) {
+        sqlite.exec('ALTER TABLE auth_audit ADD COLUMN country_code TEXT');
+    }
+    sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS session_revocations (
+            session_key TEXT PRIMARY KEY,
+            revoked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reason TEXT
+        );
+    `);
+    sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS game_parameters (
+            param_key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            description TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+}
+migrateSchema();
+
+const DEFAULT_GAME_PARAMETERS = [
+    {
+        param_key: 'idle_logout_minutes',
+        value: '60',
+        description: 'Automatic sign-out after this many minutes without any server activity (no requests).'
+    }
+];
+
+const seedGameParamStmt = sqlite.prepare(`
+    INSERT OR IGNORE INTO game_parameters (param_key, value, description)
+    VALUES (?, ?, ?)
+`);
+for (const p of DEFAULT_GAME_PARAMETERS) {
+    seedGameParamStmt.run(p.param_key, p.value, p.description);
+}
+
+const GAME_PARAMETER_EDITABLE_KEYS = new Set(DEFAULT_GAME_PARAMETERS.map((p) => p.param_key));
+
+const listGameParametersStmt = sqlite.prepare(`
+    SELECT param_key, value, description, updated_at FROM game_parameters ORDER BY param_key COLLATE NOCASE
+`);
+const getGameParameterValueStmt = sqlite.prepare('SELECT value FROM game_parameters WHERE param_key = ?');
+const updateGameParameterStmt = sqlite.prepare(`
+    UPDATE game_parameters SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE param_key = ?
 `);
 
 const selectLegacyStateStmt = sqlite.prepare('SELECT value FROM app_state WHERE key = ?');
@@ -69,6 +160,34 @@ const upsertPlayerStateStmt = sqlite.prepare(`
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
 `);
+
+const insertActiveSessionStmt = sqlite.prepare(`
+    INSERT INTO active_sessions (session_key, google_sub, email, ip, user_agent, country_code, logged_in_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+`);
+
+const deleteActiveSessionStmt = sqlite.prepare(`
+    DELETE FROM active_sessions WHERE session_key = ?
+`);
+
+const touchActiveSessionStmt = sqlite.prepare(`
+    UPDATE active_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE session_key = ?
+`);
+
+const insertAuthAuditStmt = sqlite.prepare(`
+    INSERT INTO auth_audit (google_sub, email, event, session_key, ip, user_agent, country_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+`);
+
+const selectRevokedSessionStmt = sqlite.prepare('SELECT 1 AS x FROM session_revocations WHERE session_key = ?');
+const revokeSessionKeyStmt = sqlite.prepare(`
+    INSERT OR REPLACE INTO session_revocations (session_key, reason) VALUES (?, ?)
+`);
+const getAuthVersionStmt = sqlite.prepare('SELECT COALESCE(auth_version, 0) AS v FROM users WHERE google_sub = ?');
+const bumpAuthVersionStmt = sqlite.prepare(`
+    UPDATE users SET auth_version = COALESCE(auth_version, 0) + 1 WHERE google_sub = ?
+`);
+const deleteActiveForUserStmt = sqlite.prepare('DELETE FROM active_sessions WHERE google_sub = ?');
 
 function persistStateForUser(googleSub, state) {
     upsertPlayerStateStmt.run(googleSub, JSON.stringify(state));
@@ -155,5 +274,166 @@ module.exports = {
     resetGameState: (googleSub) => {
         persistStateForUser(googleSub, DEFAULT_STATE);
         return DEFAULT_STATE;
-    }
+    },
+
+    /** New Google sign-in */
+    recordLogin: (user, sessionKey, meta) => {
+        insertActiveSessionStmt.run(
+            sessionKey,
+            user.googleSub,
+            user.email,
+            meta?.ip ?? null,
+            meta?.userAgent ?? null,
+            meta?.countryCode ?? null
+        );
+        insertAuthAuditStmt.run(
+            user.googleSub,
+            user.email,
+            'login',
+            sessionKey,
+            meta?.ip ?? null,
+            meta?.userAgent ?? null,
+            meta?.countryCode ?? null
+        );
+    },
+
+    /** Signed cookie existed but no server session row yet (e.g. after upgrade or DB reset). */
+    attachSession: (user, sessionKey, meta) => {
+        insertActiveSessionStmt.run(
+            sessionKey,
+            user.googleSub,
+            user.email,
+            meta?.ip ?? null,
+            meta?.userAgent ?? null,
+            meta?.countryCode ?? null
+        );
+        insertAuthAuditStmt.run(
+            user.googleSub,
+            user.email,
+            'session_attached',
+            sessionKey,
+            meta?.ip ?? null,
+            meta?.userAgent ?? null,
+            meta?.countryCode ?? null
+        );
+    },
+
+    recordLogout: (user, sessionKey, meta, auditEvent = 'logout') => {
+        if (sessionKey) {
+            deleteActiveSessionStmt.run(sessionKey);
+        }
+        if (user && user.googleSub) {
+            insertAuthAuditStmt.run(
+                user.googleSub,
+                user.email,
+                auditEvent,
+                sessionKey || null,
+                meta?.ip ?? null,
+                meta?.userAgent ?? null,
+                meta?.countryCode ?? null
+            );
+        }
+    },
+
+    touchSession: (sessionKey) => {
+        if (!sessionKey) return false;
+        const result = touchActiveSessionStmt.run(sessionKey);
+        return result.changes > 0;
+    },
+
+    /** Remove active row only (no audit) — e.g. before replacing session on re-login. */
+    removeActiveSessionRow: (sessionKey) => {
+        if (sessionKey) deleteActiveSessionStmt.run(sessionKey);
+    },
+
+    listActiveSessions: () => sqlite.prepare(`
+        SELECT session_key, google_sub, email, logged_in_at, last_seen_at, ip, user_agent, country_code
+        FROM active_sessions
+        ORDER BY last_seen_at DESC
+    `).all(),
+
+    listAuthAudit: (limit = 200) => sqlite.prepare(`
+        SELECT id, occurred_at, google_sub, email, event, session_key, ip, user_agent, country_code
+        FROM auth_audit
+        ORDER BY id DESC
+        LIMIT ?
+    `).all(limit),
+
+    isSessionRevoked: (sessionKey) => Boolean(sessionKey && selectRevokedSessionStmt.get(sessionKey)),
+
+    getAuthVersion: (googleSub) => {
+        if (!googleSub) return 0;
+        const row = getAuthVersionStmt.get(googleSub);
+        return row ? row.v : 0;
+    },
+
+    kickOneSession: (sessionKey, reason = 'admin_kick') => {
+        if (!sessionKey) return false;
+        revokeSessionKeyStmt.run(sessionKey, reason);
+        deleteActiveSessionStmt.run(sessionKey);
+        return true;
+    },
+
+    kickAllSessionsForUser: (googleSub) => {
+        if (!googleSub) return false;
+        deleteActiveForUserStmt.run(googleSub);
+        bumpAuthVersionStmt.run(googleSub);
+        return true;
+    },
+
+    listGameParameters: () => listGameParametersStmt.all(),
+
+    /**
+     * @param {string} paramKey
+     * @param {string} value
+     * @returns {{ ok: true } | { ok: false, error: string }}
+     */
+    setGameParameter: (paramKey, value) => {
+        if (!paramKey || typeof paramKey !== 'string' || !GAME_PARAMETER_EDITABLE_KEYS.has(paramKey)) {
+            return { ok: false, error: 'Unknown or invalid parameter key' };
+        }
+        if (value === undefined || value === null || String(value).trim() === '') {
+            return { ok: false, error: 'Value is required' };
+        }
+        const str = String(value).trim();
+        if (paramKey === 'idle_logout_minutes') {
+            const n = parseInt(str, 10);
+            if (!Number.isFinite(n) || n < 1 || n > 7 * 24 * 60) {
+                return { ok: false, error: 'Idle logout must be between 1 and 10080 minutes (7 days)' };
+            }
+        }
+        const result = updateGameParameterStmt.run(str, paramKey);
+        if (result.changes === 0) {
+            return { ok: false, error: 'Parameter row missing; restart server to seed defaults' };
+        }
+        return { ok: true };
+    },
+
+    /** Inactivity window for session enforcement (milliseconds). */
+    getIdleLogoutMs: () => {
+        const row = getGameParameterValueStmt.get('idle_logout_minutes');
+        let minutes = parseInt(row?.value, 10);
+        if (!Number.isFinite(minutes) || minutes < 1) minutes = 60;
+        if (minutes > 7 * 24 * 60) minutes = 7 * 24 * 60;
+        return minutes * 60 * 1000;
+    },
+
+    /** Admin dashboard: who has an active session vs all registered players. */
+    listAdminDashboard: () => ({
+        activeSessions: sqlite.prepare(`
+            SELECT a.session_key, a.google_sub, a.email AS session_email, a.logged_in_at, a.last_seen_at,
+                   a.ip, a.user_agent, a.country_code, u.name AS user_name
+            FROM active_sessions a
+            JOIN users u ON u.google_sub = a.google_sub
+            ORDER BY a.last_seen_at DESC
+        `).all(),
+        allUsers: sqlite.prepare(`
+            SELECT u.google_sub, u.email, u.name, u.created_at AS user_created_at, u.updated_at AS user_updated_at,
+                   COALESCE(u.auth_version, 0) AS auth_version,
+                   p.updated_at AS last_game_save_at
+            FROM users u
+            LEFT JOIN player_game_state p ON p.google_sub = u.google_sub
+            ORDER BY u.email COLLATE NOCASE
+        `).all()
+    })
 };

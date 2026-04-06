@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — Middle East War</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        .wrap {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 16px 48px;
+        }
+        .card {
+            background: #111827;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+            margin-bottom: 20px;
+        }
+        h1 { margin: 0 0 8px; font-size: 22px; }
+        h2 { margin: 0 0 12px; font-size: 16px; color: #94a3b8; }
+        p { margin: 0 0 12px; color: #cbd5e1; line-height: 1.45; }
+        .muted { color: #94a3b8; font-size: 14px; }
+        #error { color: #f87171; min-height: 22px; margin-top: 12px; }
+        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+        button, .btn {
+            background: #1e293b;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover, .btn:hover { background: #334155; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            border: 1px solid #334155;
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background: #1e293b; color: #94a3b8; font-weight: 600; }
+        tr:nth-child(even) td { background: #0c1222; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+        .badge-on { background: #14532d; color: #86efac; }
+        .badge-off { background: #450a0a; color: #fca5a5; }
+        .hidden { display: none !important; }
+        #game-params-err { color: #f87171; font-size: 14px; margin-bottom: 10px; min-height: 0; }
+        .param-key { font-family: ui-monospace, monospace; font-size: 12px; color: #94a3b8; }
+        input.param-input {
+            background: #0c1222;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+            padding: 6px 10px;
+            border-radius: 6px;
+            width: 7rem;
+            font-size: 14px;
+        }
+    </style>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<div class="wrap">
+    <div id="panel-login" class="card hidden">
+        <h1>Administrator sign-in</h1>
+        <p>Only <strong>alonir@gmail.com</strong> can access this page. Use Google sign-in below.</p>
+        <div id="google-signin-button"></div>
+        <div id="error"></div>
+    </div>
+
+    <div id="panel-denied" class="card hidden">
+        <h1>Access denied</h1>
+        <p>This Google account is not authorized as an administrator.</p>
+        <p class="muted">Sign in with <strong>alonir@gmail.com</strong>, or sign out and try again.</p>
+        <div class="toolbar">
+            <button type="button" id="btn-denied-logout">Sign out</button>
+        </div>
+    </div>
+
+    <div id="panel-dash" class="hidden">
+        <div class="card">
+            <div class="toolbar">
+                <h1 style="margin:0; flex:1; min-width:200px;">Admin dashboard</h1>
+                <button type="button" id="btn-refresh">Refresh</button>
+                <button type="button" id="btn-restart-server">Restart server</button>
+                <button type="button" id="btn-logout">Sign out</button>
+            </div>
+            <p class="muted">Signed in as <span id="admin-email"></span></p>
+        </div>
+
+        <div class="card">
+            <h2>Game parameters</h2>
+            <p class="muted">Stored in the database; idle logout applies on the next request for each signed-in player.</p>
+            <div id="game-params-err"></div>
+            <div id="game-params-body"></div>
+        </div>
+
+        <div class="card">
+            <h2>Currently connected (active sessions)</h2>
+            <p class="muted">Browsers/devices with a valid login cookie right now.</p>
+            <div id="table-active"></div>
+        </div>
+
+        <div class="card">
+            <h2>All registered players</h2>
+            <p class="muted">Everyone who has signed in at least once. “Online” = at least one active session.</p>
+            <div id="table-users"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+
+    /** Always hit this origin’s APIs (avoids broken relative URLs if the page URL is wrong). */
+    function api(p) {
+        return `${window.location.origin}${p.startsWith('/') ? p : `/${p}`}`;
+    }
+
+    async function readJsonOrThrow(res, label) {
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            const snippet = (await res.text()).slice(0, 120).replace(/\s+/g, ' ');
+            throw new Error(
+                `${label}: expected JSON but got ${ct || 'unknown type'}. `
+                + 'Use http://localhost:3000/admin (not opening the HTML file from disk). '
+                + (snippet ? `Body starts: ${snippet}` : '')
+            );
+        }
+        return res.json();
+    }
+
+    function show(id) {
+        ['panel-login', 'panel-denied', 'panel-dash'].forEach((p) => $(p).classList.add('hidden'));
+        $(id).classList.remove('hidden');
+    }
+
+    async function loadConfig() {
+        const res = await fetch(api('/api/admin/config'), { credentials: 'include' });
+        const payload = await readJsonOrThrow(res, 'GET /api/admin/config');
+        if (!res.ok || !payload.success || !payload.googleClientId) {
+            throw new Error(payload.error || 'Missing admin config');
+        }
+        return payload.googleClientId;
+    }
+
+    function renderGoogleButton(clientId, container, callback) {
+        const render = () => {
+            if (!(window.google && google.accounts && google.accounts.id)) return false;
+            container.innerHTML = '';
+            google.accounts.id.initialize({
+                client_id: clientId,
+                callback,
+                context: 'signin',
+                use_fedcm_for_prompt: false,
+                ux_mode: 'popup'
+            });
+            google.accounts.id.renderButton(container, {
+                theme: 'outline',
+                size: 'large',
+                type: 'standard',
+                text: 'signin_with',
+                shape: 'rectangular',
+                logo_alignment: 'left'
+            });
+            return true;
+        };
+        if (render()) return;
+        const t = setInterval(() => { if (render()) clearInterval(t); }, 200);
+        setTimeout(() => clearInterval(t), 15000);
+    }
+
+    /** @returns {'dash'|'denied'|'anon'} */
+    async function tryAdminSession() {
+        const res = await fetch(api('/api/admin/me'), { credentials: 'include' });
+        if (res.ok) {
+            const data = await readJsonOrThrow(res, 'GET /api/admin/me');
+            $('admin-email').textContent = data.user?.email || '';
+            show('panel-dash');
+            await loadDashboard();
+            return 'dash';
+        }
+        if (res.status === 403) {
+            show('panel-denied');
+            return 'denied';
+        }
+        return 'anon';
+    }
+
+    function cellText(tr, text) {
+        const td = document.createElement('td');
+        td.textContent = text == null ? '' : String(text);
+        tr.appendChild(td);
+    }
+
+    function gameParameterLabel(paramKey) {
+        if (paramKey === 'idle_logout_minutes') return 'Idle logout';
+        return paramKey.replace(/_/g, ' ');
+    }
+
+    function renderGameParameters(rows) {
+        const host = $('game-params-body');
+        host.innerHTML = '';
+        if (!rows || !rows.length) {
+            host.textContent = 'No parameters.';
+            return;
+        }
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const hr = document.createElement('tr');
+        ['Setting', 'Description', 'Value', ''].forEach((h) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            hr.appendChild(th);
+        });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        const tb = document.createElement('tbody');
+        rows.forEach((r) => {
+            const tr = document.createElement('tr');
+            const tdName = document.createElement('td');
+            const titleEl = document.createElement('strong');
+            titleEl.textContent = gameParameterLabel(r.param_key);
+            tdName.appendChild(titleEl);
+            const keyEl = document.createElement('div');
+            keyEl.className = 'param-key';
+            keyEl.textContent = r.param_key;
+            tdName.appendChild(keyEl);
+            tr.appendChild(tdName);
+            cellText(tr, r.description || '—');
+            const tdVal = document.createElement('td');
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '1';
+            input.max = '10080';
+            input.className = 'param-input';
+            input.dataset.paramKey = r.param_key;
+            input.value = r.value;
+            input.setAttribute('aria-label', r.param_key);
+            tdVal.appendChild(input);
+            tr.appendChild(tdVal);
+            const tdBtn = document.createElement('td');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-sm';
+            btn.textContent = 'Save';
+            btn.addEventListener('click', () => saveGameParameter(r.param_key));
+            tdBtn.appendChild(btn);
+            tr.appendChild(tdBtn);
+            tb.appendChild(tr);
+        });
+        table.appendChild(tb);
+        host.appendChild(table);
+    }
+
+    async function saveGameParameter(paramKey) {
+        const input = document.querySelector(`#game-params-body input[data-param-key="${paramKey}"]`);
+        if (!input) return;
+        $('game-params-err').textContent = '';
+        try {
+            const res = await fetch(api('/api/admin/game-parameters'), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ param_key: paramKey, value: input.value })
+            });
+            if (res.status === 401) {
+                show('panel-login');
+                $('error').textContent = 'Session expired. Sign in again.';
+                return;
+            }
+            const data = await readJsonOrThrow(res, 'PUT /api/admin/game-parameters');
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Save failed');
+            }
+            renderGameParameters(data.parameters);
+        } catch (e) {
+            $('game-params-err').textContent = e.message || 'Save failed';
+        }
+    }
+
+    async function kickSession(sessionKey) {
+        if (!sessionKey || !confirm('Kick this browser session? The player must sign in again on this device.')) return;
+        try {
+            const res = await fetch(api('/api/admin/kick-session'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ sessionKey })
+            });
+            const data = await readJsonOrThrow(res, 'POST /api/admin/kick-session');
+            if (!res.ok || !data.success) throw new Error(data.error || 'Kick failed');
+            await loadDashboard();
+        } catch (e) {
+            alert(e.message || 'Kick failed');
+        }
+    }
+
+    async function kickUserAllDevices(googleSub, label) {
+        if (!googleSub || !confirm(`Sign out ${label} on all devices?`)) return;
+        try {
+            const res = await fetch(api('/api/admin/kick-user'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ googleSub })
+            });
+            const data = await readJsonOrThrow(res, 'POST /api/admin/kick-user');
+            if (!res.ok || !data.success) throw new Error(data.error || 'Kick failed');
+            await loadDashboard();
+        } catch (e) {
+            alert(e.message || 'Kick failed');
+        }
+    }
+
+    function renderActiveTable(rows) {
+        const host = $('table-active');
+        host.innerHTML = '';
+        if (!rows.length) {
+            host.textContent = 'No active sessions.';
+            return;
+        }
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const hr = document.createElement('tr');
+        ['Name', 'Email', 'Country', 'Logged in', 'Last seen', 'IP', 'User agent', 'Actions'].forEach((h) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            hr.appendChild(th);
+        });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        const tb = document.createElement('tbody');
+        rows.forEach((r) => {
+            const tr = document.createElement('tr');
+            cellText(tr, r.user_name);
+            cellText(tr, r.session_email || r.google_sub);
+            cellText(tr, r.country_code || '—');
+            cellText(tr, r.logged_in_at);
+            cellText(tr, r.last_seen_at);
+            cellText(tr, r.ip);
+            cellText(tr, r.user_agent);
+            const tdAct = document.createElement('td');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-sm';
+            btn.textContent = 'Kick session';
+            btn.addEventListener('click', () => kickSession(r.session_key));
+            tdAct.appendChild(btn);
+            tr.appendChild(tdAct);
+            tb.appendChild(tr);
+        });
+        table.appendChild(tb);
+        host.appendChild(table);
+    }
+
+    function renderUsersTable(rows, activeSubs) {
+        const host = $('table-users');
+        host.innerHTML = '';
+        if (!rows.length) {
+            host.textContent = 'No users yet.';
+            return;
+        }
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const hr = document.createElement('tr');
+        ['Online', 'Name', 'Email', 'Last game save', 'User since', 'Actions'].forEach((h) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            hr.appendChild(th);
+        });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        const tb = document.createElement('tbody');
+        rows.forEach((r) => {
+            const tr = document.createElement('tr');
+            const on = activeSubs.has(r.google_sub);
+            const tdOn = document.createElement('td');
+            const span = document.createElement('span');
+            span.className = 'badge ' + (on ? 'badge-on' : 'badge-off');
+            span.textContent = on ? 'Online' : 'Offline';
+            tdOn.appendChild(span);
+            tr.appendChild(tdOn);
+            cellText(tr, r.name);
+            cellText(tr, r.email);
+            cellText(tr, r.last_game_save_at || '—');
+            cellText(tr, r.user_created_at);
+            const tdKick = document.createElement('td');
+            const btnAll = document.createElement('button');
+            btnAll.type = 'button';
+            btnAll.className = 'btn-sm';
+            btnAll.textContent = 'Kick all devices';
+            btnAll.addEventListener('click', () => kickUserAllDevices(r.google_sub, r.email || r.name));
+            tdKick.appendChild(btnAll);
+            tr.appendChild(tdKick);
+            tb.appendChild(tr);
+        });
+        table.appendChild(tb);
+        host.appendChild(table);
+    }
+
+    async function loadDashboard() {
+        const [playersRes, paramsRes] = await Promise.all([
+            fetch(api('/api/admin/players'), { credentials: 'include' }),
+            fetch(api('/api/admin/game-parameters'), { credentials: 'include' })
+        ]);
+        if (playersRes.status === 401) {
+            show('panel-login');
+            $('error').textContent = 'Session expired. Sign in again.';
+            return;
+        }
+        const data = await readJsonOrThrow(playersRes, 'GET /api/admin/players');
+        if (!playersRes.ok || !data.success) {
+            throw new Error(data.error || 'Failed to load players');
+        }
+        const active = data.activeSessions || [];
+        renderActiveTable(active);
+        const activeSubs = new Set(active.map((a) => a.google_sub));
+        renderUsersTable(data.allUsers || [], activeSubs);
+
+        $('game-params-err').textContent = '';
+        if (paramsRes.status === 401) {
+            show('panel-login');
+            $('error').textContent = 'Session expired. Sign in again.';
+            return;
+        }
+        if (paramsRes.ok) {
+            const pData = await readJsonOrThrow(paramsRes, 'GET /api/admin/game-parameters');
+            if (pData.success) {
+                renderGameParameters(pData.parameters);
+            } else {
+                $('game-params-err').textContent = pData.error || 'Failed to load game parameters.';
+            }
+        } else {
+            $('game-params-err').textContent = 'Could not load game parameters.';
+        }
+    }
+
+    async function handleCredential(response) {
+        const err = $('error');
+        err.textContent = '';
+        try {
+            const res = await fetch(api('/api/auth/google'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ credential: response.credential })
+            });
+            const payload = await readJsonOrThrow(res, 'POST /api/auth/google');
+            if (!res.ok || !payload.success) {
+                throw new Error(payload.error || 'Sign-in failed');
+            }
+            const state = await tryAdminSession();
+            if (state === 'anon') {
+                err.textContent = 'Signed in but admin session not available. Try again.';
+            }
+        } catch (e) {
+            err.textContent = e.message || 'Sign-in failed';
+        }
+    }
+
+    async function logout() {
+        await fetch(api('/api/auth/logout'), { method: 'POST', credentials: 'include' });
+        show('panel-login');
+        $('error').textContent = '';
+    }
+
+    async function restartServer() {
+        if (!confirm('Stop and start the game server process? Players will briefly lose connection; you may need to refresh this page after a few seconds.')) {
+            return;
+        }
+        try {
+            const res = await fetch(api('/api/admin/restart-server'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: '{}'
+            });
+            if (res.status === 401) {
+                show('panel-login');
+                $('error').textContent = 'Session expired. Sign in again.';
+                return;
+            }
+            const data = await readJsonOrThrow(res, 'POST /api/admin/restart-server');
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Restart not available');
+            }
+            alert(data.message || 'Server is restarting. Wait a moment, then refresh this page or reopen /admin.');
+        } catch (e) {
+            alert(e.message || 'Restart failed');
+        }
+    }
+
+    document.getElementById('btn-logout').addEventListener('click', logout);
+    document.getElementById('btn-denied-logout').addEventListener('click', logout);
+    document.getElementById('btn-refresh').addEventListener('click', () => {
+        loadDashboard().catch((e) => alert(e.message));
+    });
+    document.getElementById('btn-restart-server').addEventListener('click', () => {
+        restartServer().catch((e) => alert(e.message));
+    });
+
+    (async function init() {
+        try {
+            const clientId = await loadConfig();
+            const state = await tryAdminSession();
+            if (state === 'dash' || state === 'denied') return;
+            show('panel-login');
+            renderGoogleButton(clientId, $('google-signin-button'), handleCredential);
+        } catch (e) {
+            show('panel-login');
+            $('error').textContent = e.message || 'Init failed';
+        }
+    })();
+</script>
+</body>
+</html>

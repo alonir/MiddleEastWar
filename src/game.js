@@ -312,13 +312,26 @@ function getCountryStrength(countryId, diplomacyStatus) {
 
 const withCredentials = { credentials: 'include' };
 
+function goToLoginIfUnauthorized(response) {
+    if (response.status === 401) {
+        window.location.href = '/login';
+        return true;
+    }
+    return false;
+}
+
 function saveState() {
     fetch('/api/save-state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gameState),
         ...withCredentials
-    }).catch(err => console.error('Failed to save state:', err));
+    })
+        .then((response) => {
+            if (goToLoginIfUnauthorized(response)) return;
+            if (!response.ok) console.error('Failed to save state:', response.status);
+        })
+        .catch((err) => console.error('Failed to save state:', err));
 }
 
 async function isAppServerReachable() {
@@ -426,6 +439,7 @@ async function refreshWarStrengths() {
                 }),
                 ...withCredentials
             });
+            if (goToLoginIfUnauthorized(response)) return;
             const payload = await response.json();
             if (!response.ok || !payload.success || !payload.result) return;
 
@@ -724,6 +738,7 @@ async function showBattlePowerPanel(country) {
             }),
             ...withCredentials
         });
+        if (goToLoginIfUnauthorized(response)) return;
         const payload = await response.json();
         if (!response.ok || !payload.success || !payload.result) {
             throw new Error(payload.error || 'Could not resolve battle');
@@ -1006,6 +1021,7 @@ async function restartGame() {
     if (confirm(messages[currentLanguage])) {
         try {
             const resp = await fetch('/api/reset-state', { method: 'POST', ...withCredentials });
+            if (goToLoginIfUnauthorized(resp)) return;
             if (resp.ok) {
                 const data = await resp.json();
                 gameState = data.state;
