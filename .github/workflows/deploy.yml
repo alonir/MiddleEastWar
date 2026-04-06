@@ -10,10 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      # Project ID is not secret — Variables or Secrets both work.
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || secrets.GCP_PROJECT_ID }}
       GCP_SERVICE_NAME: middleeastwar
       GCP_REGION: us-central1
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      # OAuth Web Client ID is public in the browser; use a Repository *variable* or *secret*.
+      GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
       SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
     permissions:
       contents: read
@@ -31,8 +33,17 @@ jobs:
           if [ -z "${GOOGLE_CLIENT_ID}" ]; then missing="${missing} GOOGLE_CLIENT_ID"; fi
           if [ -z "${SESSION_SECRET}" ]; then missing="${missing} SESSION_SECRET"; fi
           if [ -n "${missing}" ]; then
-            echo "Add these in GitHub: Settings → Secrets and variables → Actions → Repository secrets"
-            echo "(names must match exactly, including underscores):"
+            echo "Deploy is missing configuration. Open this repo on GitHub:"
+            echo "  Settings → Secrets and variables → Actions"
+            echo ""
+            echo "Required repository SECRET: GCP_SA_KEY (JSON key — never use the Variables tab for this)"
+            echo "Required repository SECRET: SESSION_SECRET"
+            echo "Required repository VARIABLE or SECRET: GCP_PROJECT_ID, GOOGLE_CLIENT_ID"
+            echo "  (easiest: Variables → New repository variable → GOOGLE_CLIENT_ID = your *.apps.googleusercontent.com)"
+            echo ""
+            echo "If you created Environment secrets, add to the deploy job:  environment: <that-environment-name>"
+            echo ""
+            echo "Missing right now:"
             echo "${missing}" | tr ' ' '\n' | sed '/^$/d' | sort -u
             exit 1
           fi
