@@ -163,6 +163,7 @@ function enforceSessionRules(req, res, next) {
 function syncSessionPresence(req) {
     if (!req.session || !req.session.user) return;
     const user = req.session.user;
+    db.upsertUser(user);
     let sessionKey = req.session.sessionKey;
     const meta = getRequestMeta(req);
     if (!sessionKey) {
@@ -432,12 +433,12 @@ app.get('/api/newspaper', (req, res) => {
 });
 
 app.get('/api/game-state', (req, res) => {
-    res.json(db.getGameState(req.session.user.googleSub));
+    res.json(db.getGameState(req.session.user.googleSub, req.session.user));
 });
 
 app.post('/api/save-state', (req, res) => {
     try {
-        db.saveGameState(req.session.user.googleSub, req.body);
+        db.saveGameState(req.session.user.googleSub, req.body, req.session.user);
         res.json({ success: true });
     } catch (e) {
         console.error("Failed to save state:", e);
@@ -447,7 +448,7 @@ app.post('/api/save-state', (req, res) => {
 
 app.post('/api/reset-state', (req, res) => {
     try {
-        const initialState = db.resetGameState(req.session.user.googleSub);
+        const initialState = db.resetGameState(req.session.user.googleSub, req.session.user);
         res.json({ success: true, state: initialState });
     } catch (e) {
         console.error("Failed to reset state:", e);

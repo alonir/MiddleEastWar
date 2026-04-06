@@ -72,3 +72,8 @@ Behavior:
 - Users are stored in SQLite (`users` table).
 - Each player has isolated game progress in `player_game_state` by Google user ID (`google_sub`).
 .
+
+login and see files
+
+gcloud run services list --project=middleeastwar
+logs links https://console.cloud.google.com/run/detail/us-central1/middleeastwar/observability/logs?project=middleeastwar

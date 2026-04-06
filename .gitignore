@@ -1,2 +1,7 @@
 .env
 node_modules/
+
+# SQLite (local / server data — do not commit)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -30,6 +30,7 @@ const DEFAULT_STATE = {
 
 const sqlite = new Database(SQLITE_DB_PATH);
 sqlite.pragma('journal_mode = WAL');
+sqlite.pragma('foreign_keys = ON');
 sqlite.exec(`
     CREATE TABLE IF NOT EXISTS users (
         google_sub TEXT PRIMARY KEY,
@@ -243,7 +244,15 @@ module.exports = {
         upsertUserStmt.run(user.googleSub, user.email, user.name, user.picture || null);
     },
 
-    getGameState: (googleSub) => {
+    getGameState: (googleSub, sessionUser) => {
+        if (sessionUser && sessionUser.googleSub === googleSub) {
+            upsertUserStmt.run(
+                sessionUser.googleSub,
+                sessionUser.email,
+                sessionUser.name,
+                sessionUser.picture || null
+            );
+        }
         const current = getStoredStateForUser(googleSub);
         if (!selectPlayerStateStmt.get(googleSub)) {
             // One-time bootstrap for first login using legacy shared state when present.
@@ -263,7 +272,15 @@ module.exports = {
         return current;
     },
 
-    saveGameState: (googleSub, state) => {
+    saveGameState: (googleSub, state, sessionUser) => {
+        if (sessionUser && sessionUser.googleSub === googleSub) {
+            upsertUserStmt.run(
+                sessionUser.googleSub,
+                sessionUser.email,
+                sessionUser.name,
+                sessionUser.picture || null
+            );
+        }
         const current = getStoredStateForUser(googleSub);
         // Merge to avoid wiping fields not sent by client
         const merged = { ...current, ...state };
@@ -271,13 +288,22 @@ module.exports = {
     },
 
     getNewspaper: () => newspaperTranslations,
-    resetGameState: (googleSub) => {
+    resetGameState: (googleSub, sessionUser) => {
+        if (sessionUser && sessionUser.googleSub === googleSub) {
+            upsertUserStmt.run(
+                sessionUser.googleSub,
+                sessionUser.email,
+                sessionUser.name,
+                sessionUser.picture || null
+            );
+        }
         persistStateForUser(googleSub, DEFAULT_STATE);
         return DEFAULT_STATE;
     },
 
     /** New Google sign-in */
     recordLogin: (user, sessionKey, meta) => {
+        upsertUserStmt.run(user.googleSub, user.email, user.name, user.picture || null);
         insertActiveSessionStmt.run(
             sessionKey,
             user.googleSub,
@@ -299,6 +325,7 @@ module.exports = {
 
     /** Signed cookie existed but no server session row yet (e.g. after upgrade or DB reset). */
     attachSession: (user, sessionKey, meta) => {
+        upsertUserStmt.run(user.googleSub, user.email, user.name, user.picture || null);
         insertActiveSessionStmt.run(
             sessionKey,
             user.googleSub,
