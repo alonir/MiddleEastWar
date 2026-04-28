@@ -163,6 +163,20 @@ const countries = [
         }
     },
     {
+        id: "gaza_strip",
+        coords: [31.3547, 34.3082],
+        name: { en: "Gaza Strip", he: "רצועת עזה", ar: "قطاع غزة" },
+        stats: {
+            pop: { en: "2.3M", he: "2.3M", ar: "2.3M" },
+            army_regular: { en: "40k", he: "40k", ar: "40k" },
+            army_reserves: { en: "0", he: "0", ar: "0" },
+            tanks: { en: "0", he: "0", ar: "0" },
+            aircraft: { en: "0", he: "0", ar: "0" },
+            navy: { en: "0", he: "0", ar: "0" },
+            submarines: { en: "0", he: "0", ar: "0" }
+        }
+    },
+    {
         id: "lebanon",
         coords: [33.8547, 35.8623],
         name: { en: "Lebanon", he: "לבנון", ar: "لبنان" },
@@ -932,7 +946,7 @@ function animateAttack(targetCountry, callback) {
     const startPoint = map.latLngToLayerPoint(israel.coords);
     const endPoint = map.latLngToLayerPoint(targetCountry.coords);
     
-    const isBordering = ['egypt', 'jordan', 'syria', 'lebanon'].includes(targetCountry.id);
+    const isBordering = ['egypt', 'jordan', 'syria', 'lebanon', 'gaza_strip'].includes(targetCountry.id);
     
     // Top-down tank SVG facing right natively
     const tankSvg = `<svg viewBox="0 0 100 100" width="28" height="28" xmlns="http://www.w3.org/2000/svg">

@@ -27,7 +27,8 @@ const DEFAULT_STATE = {
         saudi_arabia: 'neutral',
         oman: 'neutral',
         kuwait: 'neutral',
-        iraq: 'hostile'
+        iraq: 'hostile',
+        gaza_strip: 'war'
     }
 };
 
