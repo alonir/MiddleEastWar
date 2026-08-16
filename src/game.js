@@ -19,6 +19,147 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
     attribution: 'Tiles &copy; Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
 }).addTo(map);
 
+// Political borders + place labels over imagery (country lines are otherwise hard to see)
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    opacity: 0.9,
+    attribution: 'Boundaries &copy; Esri'
+}).addTo(map);
+
+if (!map.getPane('countryBorderPane')) {
+    map.createPane('countryBorderPane');
+    map.getPane('countryBorderPane').style.zIndex = 350;
+    map.getPane('countryBorderPane').style.pointerEvents = 'none';
+}
+
+// Natural Earth ISO_A3 → game country id
+const COUNTRY_BORDER_ISO_BY_ID = {
+    egypt: 'EGY',
+    saudi_arabia: 'SAU',
+    iran: 'IRN',
+    turkey: 'TUR',
+    iraq: 'IRQ',
+    yemen: 'YEM',
+    syria: 'SYR',
+    jordan: 'JOR',
+    uae: 'ARE',
+    israel: 'ISR',
+    lebanon: 'LBN',
+    oman: 'OMN',
+    kuwait: 'KWT',
+    qatar: 'QAT',
+    bahrain: 'BHR'
+};
+
+// ISO 3166-1 alpha-2 for flagcdn (Gaza uses Palestine)
+const COUNTRY_FLAG_CODE = {
+    egypt: 'eg',
+    saudi_arabia: 'sa',
+    iran: 'ir',
+    turkey: 'tr',
+    iraq: 'iq',
+    yemen: 'ye',
+    syria: 'sy',
+    jordan: 'jo',
+    uae: 'ae',
+    israel: 'il',
+    gaza_strip: 'ps',
+    lebanon: 'lb',
+    oman: 'om',
+    kuwait: 'kw',
+    qatar: 'qa',
+    bahrain: 'bh'
+};
+
+function getCountryFlagHtml(countryId, size = 'sm') {
+    const code = COUNTRY_FLAG_CODE[countryId];
+    if (!code) return '';
+    const widths = { sm: 18, md: 22, lg: 28 };
+    const width = widths[size] || widths.sm;
+    const height = Math.round(width * 0.75);
+    return `<img class="country-flag country-flag-${size}" src="https://flagcdn.com/w40/${code}.png" srcset="https://flagcdn.com/w80/${code}.png 2x" width="${width}" height="${height}" alt="" loading="lazy" decoding="async" draggable="false" />`;
+}
+
+/** @type {Record<string, L.Path>} */
+const countryBorderLayers = {};
+
+function getCountryBorderStyle(countryId) {
+    const diplomacy = gameState?.diplomacy || {};
+
+    // No custom Gaza outline. Skip Israel — its outline overlaps neighbors.
+    const atWar = countryId !== 'israel'
+        && countryId !== 'gaza_strip'
+        && (diplomacy[countryId] || 'neutral') === 'war';
+
+    if (atWar) {
+        return {
+            color: '#000000',
+            weight: 4.5,
+            opacity: 1,
+            fillColor: '#000000',
+            fillOpacity: 0.05,
+            interactive: false,
+            className: 'country-border country-border-war'
+        };
+    }
+
+    // Other countries rely on the Esri reference tiles until war
+    return {
+        color: '#000000',
+        weight: 0,
+        opacity: 0,
+        fillOpacity: 0,
+        interactive: false,
+        className: 'country-border'
+    };
+}
+
+function updateCountryBorderStyles() {
+    Object.keys(countryBorderLayers).forEach((countryId) => {
+        const layer = countryBorderLayers[countryId];
+        if (layer && layer.setStyle) {
+            layer.setStyle(getCountryBorderStyle(countryId));
+        }
+    });
+}
+
+function registerCountryBorderLayer(countryId, layer) {
+    countryBorderLayers[countryId] = layer;
+    layer.setStyle(getCountryBorderStyle(countryId));
+}
+
+async function loadCountryBorderOutlines() {
+    const isoToId = Object.fromEntries(
+        Object.entries(COUNTRY_BORDER_ISO_BY_ID).map(([id, iso]) => [iso, id])
+    );
+
+    try {
+        const resp = await fetch(
+            'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson'
+        );
+        if (!resp.ok) throw new Error(`borders HTTP ${resp.status}`);
+        const geojson = await resp.json();
+
+        L.geoJSON(geojson, {
+            pane: 'countryBorderPane',
+            filter: (feature) => {
+                const iso = feature?.properties?.ISO_A3 || feature?.properties?.ADM0_A3;
+                return Boolean(isoToId[iso]);
+            },
+            style: () => ({ weight: 0, opacity: 0, fillOpacity: 0 }),
+            onEachFeature: (feature, layer) => {
+                const iso = feature?.properties?.ISO_A3 || feature?.properties?.ADM0_A3;
+                const countryId = isoToId[iso];
+                if (!countryId) return;
+                registerCountryBorderLayer(countryId, layer);
+            }
+        }).addTo(map);
+
+        updateCountryBorderStyles();
+    } catch (err) {
+        console.warn('Could not load country border outlines; Gaza outline still available.', err);
+    }
+}
+
 // Custom Middle East Country Labels
 // Data is approximate for game purposes
 const countries = [
@@ -296,6 +437,7 @@ const newspaperTranslations = {
 
 let currentLanguage = 'he';
 let markers = [];
+let warArrowLayers = [];
 let currentUser = null;
 
 const translations = {
@@ -311,6 +453,8 @@ let gameState = {
     diplomacy: {}
 };
 let dynamicStrengthByCountry = {};
+
+loadCountryBorderOutlines();
 
 function getCountryStrength(countryId, diplomacyStatus) {
     if (dynamicStrengthByCountry[countryId] !== undefined) {
@@ -481,10 +625,309 @@ async function refreshWarStrengths() {
     }
 }
 
+function clearWarArrows() {
+    warArrowLayers.forEach((layer) => {
+        try {
+            map.removeLayer(layer);
+        } catch (_) {
+            // Layer may already be gone.
+        }
+    });
+    warArrowLayers = [];
+}
+
+/**
+ * Ballistic centerline in layer pixels.
+ * Lateral offset is always measured in the fixed Israel→opponent frame so
+ * blue/red volleys can sit on opposite sides of the same corridor.
+ */
+function sampleBallisticCenterline(fromCoords, toCoords, sideOffsetPx, peakHeightPx, endInsetPx, samples, sideAxisFrom, sideAxisTo) {
+    const p1 = map.latLngToLayerPoint(fromCoords);
+    const p2 = map.latLngToLayerPoint(toCoords);
+    const axisFrom = map.latLngToLayerPoint(sideAxisFrom || fromCoords);
+    const axisTo = map.latLngToLayerPoint(sideAxisTo || toCoords);
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+
+    const adx = axisTo.x - axisFrom.x;
+    const ady = axisTo.y - axisFrom.y;
+    const aLen = Math.sqrt(adx * adx + ady * ady) || 1;
+    // Fixed left-hand perpendicular of Israel→opponent
+    const px = -ady / aLen;
+    const py = adx / aLen;
+
+    const inset = Math.min(endInsetPx, len * 0.28);
+    const usable = Math.max(len - inset * 2, 10);
+
+    const points = [];
+    for (let i = 0; i <= samples; i++) {
+        const t = i / samples;
+        const along = inset + usable * t;
+        const lift = Math.sin(Math.PI * t) * peakHeightPx;
+        points.push(L.point(
+            p1.x + ux * along + px * sideOffsetPx,
+            p1.y + uy * along + py * sideOffsetPx - lift
+        ));
+    }
+    return points;
+}
+
+/**
+ * Arrow body size in screen pixels. Stays compact at the default view (and when
+ * zoomed out); only enlarges once the user zooms in past initialZoom.
+ */
+function getWarArrowPixelScale() {
+    const delta = map.getZoom() - initialZoom;
+    if (delta <= 0) {
+        return Math.max(0.65, Math.pow(1.2, delta));
+    }
+    return Math.min(2.2, Math.pow(1.32, delta));
+}
+
+/**
+ * Filled curved arrow silhouette (like the reference icon):
+ * thick arc shaft, tapered tail, solid triangular head.
+ */
+function buildFilledCurvedArrowLatLngs(centerline, shaftHalfWidth, headLength, headHalfWidth) {
+    if (centerline.length < 4) return [];
+
+    const left = [];
+    const right = [];
+    const headStartIndex = Math.max(1, centerline.length - 4);
+
+    for (let i = 0; i < centerline.length; i++) {
+        const prev = centerline[Math.max(0, i - 1)];
+        const next = centerline[Math.min(centerline.length - 1, i + 1)];
+        const tx = next.x - prev.x;
+        const ty = next.y - prev.y;
+        const tLen = Math.sqrt(tx * tx + ty * ty) || 1;
+        const nx = -ty / tLen;
+        const ny = tx / tLen;
+
+        const t = i / (centerline.length - 1);
+        let halfW = shaftHalfWidth;
+        if (t < 0.12) {
+            halfW = shaftHalfWidth * (t / 0.12);
+        } else if (i >= headStartIndex) {
+            halfW = shaftHalfWidth * 0.92;
+        }
+
+        const p = centerline[i];
+        left.push(L.point(p.x + nx * halfW, p.y + ny * halfW));
+        right.push(L.point(p.x - nx * halfW, p.y - ny * halfW));
+    }
+
+    const tip = centerline[centerline.length - 1];
+    const before = centerline[Math.max(0, centerline.length - 3)];
+    const fdx = tip.x - before.x;
+    const fdy = tip.y - before.y;
+    const fLen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
+    const fx = fdx / fLen;
+    const fy = fdy / fLen;
+    const nx = -fy;
+    const ny = fx;
+
+    const neck = L.point(tip.x - fx * headLength, tip.y - fy * headLength);
+    const headLeft = L.point(neck.x + nx * headHalfWidth, neck.y + ny * headHalfWidth);
+    const headRight = L.point(neck.x - nx * headHalfWidth, neck.y - ny * headHalfWidth);
+    const headTip = L.point(tip.x + fx * (headLength * 0.15), tip.y + fy * (headLength * 0.15));
+
+    const outline = [
+        ...left.slice(0, headStartIndex),
+        headLeft,
+        headTip,
+        headRight,
+        ...right.slice(0, headStartIndex).reverse()
+    ];
+
+    return outline.map((pt) => map.layerPointToLatLng(pt));
+}
+
+function addFilledCurvedWarArrow(fromCoords, toCoords, {
+    sideOffsetPx,
+    peakHeightPx,
+    color,
+    shadowColor,
+    sideAxisFrom,
+    sideAxisTo
+}) {
+    const s = getWarArrowPixelScale();
+    const endInsetPx = Math.round(18 * Math.min(1.15, 0.85 + s * 0.3));
+    const samples = 28;
+
+    const centerline = sampleBallisticCenterline(
+        fromCoords,
+        toCoords,
+        sideOffsetPx,
+        peakHeightPx,
+        endInsetPx,
+        samples,
+        sideAxisFrom,
+        sideAxisTo
+    );
+    const shaftHalfWidth = 2.6 * s;
+    const headLength = 9 * s;
+    const headHalfWidth = 5.5 * s;
+    const strokeWeight = Math.max(0.8, 1.1 * s);
+
+    const shape = buildFilledCurvedArrowLatLngs(centerline, shaftHalfWidth, headLength, headHalfWidth);
+    if (shape.length < 6) return;
+
+    const shadowCenter = sampleBallisticCenterline(
+        fromCoords,
+        toCoords,
+        sideOffsetPx + 1.2 * s,
+        Math.max(4 * s, peakHeightPx - 6 * s),
+        endInsetPx,
+        samples,
+        sideAxisFrom,
+        sideAxisTo
+    );
+    const shadowShape = buildFilledCurvedArrowLatLngs(
+        shadowCenter,
+        shaftHalfWidth + 0.6 * s,
+        headLength,
+        headHalfWidth + 0.6 * s
+    );
+    if (shadowShape.length >= 6) {
+        const shadow = L.polygon(shadowShape, {
+            color: shadowColor,
+            fillColor: shadowColor,
+            weight: 0,
+            fillOpacity: 0.28,
+            interactive: false,
+            pane: 'warArrowPane'
+        }).addTo(map);
+        warArrowLayers.push(shadow);
+    }
+
+    const arrow = L.polygon(shape, {
+        color: '#ffffff',
+        fillColor: color,
+        weight: strokeWeight,
+        opacity: 1,
+        fillOpacity: 1,
+        lineJoin: 'round',
+        interactive: false,
+        className: 'war-curved-arrow',
+        pane: 'warArrowPane'
+    }).addTo(map);
+
+    const highlightPts = centerline
+        .slice(0, Math.max(2, centerline.length - 3))
+        .map((p, i, arr) => {
+            const prev = arr[Math.max(0, i - 1)];
+            const next = arr[Math.min(arr.length - 1, i + 1)];
+            const tx = next.x - prev.x;
+            const ty = next.y - prev.y;
+            const tLen = Math.sqrt(tx * tx + ty * ty) || 1;
+            const nx = -ty / tLen;
+            const ny = tx / tLen;
+            return map.layerPointToLatLng(L.point(
+                p.x + nx * (shaftHalfWidth * 0.35),
+                p.y + ny * (shaftHalfWidth * 0.35) - 0.5 * s
+            ));
+        });
+
+    const highlight = L.polyline(highlightPts, {
+        color: '#ffffff',
+        weight: Math.max(0.6, 0.85 * s),
+        opacity: 0.4,
+        lineCap: 'round',
+        interactive: false,
+        pane: 'warArrowPane'
+    }).addTo(map);
+
+    warArrowLayers.push(arrow, highlight);
+}
+
+/**
+ * Three arrows on one side of the Israel↔opponent corridor.
+ * sideSign +1 = blue (Israel attacks), -1 = red (opponent attacks).
+ */
+function addDirectedWarArrowVolley(fromCoords, toCoords, {
+    color,
+    shadowColor,
+    sideSign,
+    sideAxisFrom,
+    sideAxisTo
+}) {
+    const s = getWarArrowPixelScale();
+    const axisFrom = map.latLngToLayerPoint(sideAxisFrom);
+    const axisTo = map.latLngToLayerPoint(sideAxisTo);
+    const dist = Math.sqrt((axisTo.x - axisFrom.x) ** 2 + (axisTo.y - axisFrom.y) ** 2) || 1;
+    const heightScale = Math.min(1.35, Math.max(0.55, dist / 150));
+    // Keep a clear gap between blue and red banks, even on short links (e.g. Gaza)
+    const laneGap = Math.max(8 * s, Math.min(14 * s, dist * 0.07));
+    const bankCenter = Math.max(16 * s, Math.min(28 * s, dist * 0.12));
+
+    const lanes = [
+        { side: sideSign * (bankCenter - laneGap), peak: 22 * s * heightScale },
+        { side: sideSign * bankCenter, peak: 34 * s * heightScale },
+        { side: sideSign * (bankCenter + laneGap), peak: 22 * s * heightScale }
+    ];
+
+    lanes.forEach((lane) => {
+        addFilledCurvedWarArrow(fromCoords, toCoords, {
+            sideOffsetPx: lane.side,
+            peakHeightPx: lane.peak,
+            color,
+            shadowColor,
+            sideAxisFrom,
+            sideAxisTo
+        });
+    });
+}
+
+function ensureWarArrowPane() {
+    if (!map.getPane('warArrowPane')) {
+        map.createPane('warArrowPane');
+        map.getPane('warArrowPane').style.zIndex = 450; // above overlay, below tooltips/markers
+        map.getPane('warArrowPane').style.pointerEvents = 'none';
+    }
+}
+
+function updateWarArrows() {
+    clearWarArrows();
+    ensureWarArrowPane();
+    updateCountryBorderStyles();
+
+    const israel = countries.find((c) => c.id === 'israel');
+    if (!israel || !gameState.diplomacy) return;
+
+    countries.forEach((country) => {
+        if (country.id === 'israel') return;
+        if ((gameState.diplomacy[country.id] || 'neutral') !== 'war') return;
+
+        const axis = { sideAxisFrom: israel.coords, sideAxisTo: country.coords };
+
+        // Red first (opponent → Israel) on the negative side of the corridor
+        addDirectedWarArrowVolley(country.coords, israel.coords, {
+            color: '#dc2626',
+            shadowColor: '#000000',
+            sideSign: -1,
+            ...axis
+        });
+
+        // Blue on top / beside (Israel → opponent) on the positive side
+        addDirectedWarArrowVolley(israel.coords, country.coords, {
+            color: '#1d4ed8',
+            shadowColor: '#000000',
+            sideSign: +1,
+            ...axis
+        });
+    });
+}
+
 function updateLabels(shouldRefreshStrengths = true) {
     // Remove existing markers
     markers.forEach(marker => map.removeLayer(marker));
     markers = [];
+    clearWarArrows();
 
     updateNewspaper();
     renderCountryList();
@@ -512,6 +955,7 @@ function updateLabels(shouldRefreshStrengths = true) {
         if (strength > 80) color = '#4CAF50'; // green
         else if (strength > 30) color = '#FFEB3B'; // yellow
 
+        const flagHtml = getCountryFlagHtml(country.id, 'sm');
         const htmlContent = `
             <div class="country-marker-container">
                 <div class="country-strength-wrapper">
@@ -521,7 +965,7 @@ function updateLabels(shouldRefreshStrengths = true) {
                     <span class="country-strength-text">${strength}%</span>
                 </div>
                 <div class="country-name-with-status">
-                    <span>${country.name[currentLanguage]}</span> ${displayStatus}
+                    ${flagHtml}<span>${country.name[currentLanguage]}</span> ${displayStatus}
                 </div>
             </div>
         `;
@@ -530,15 +974,15 @@ function updateLabels(shouldRefreshStrengths = true) {
             icon: L.divIcon({
                 className: 'country-label',
                 html: htmlContent,
-                iconSize: [120, 40],
-                iconAnchor: [60, 20]
+                iconSize: [140, 44],
+                iconAnchor: [70, 22]
             })
         }).addTo(map);
 
         // Add tooltip with stats
         const tooltipContent = `
             <div class="${isRTL ? 'rtl' : ''}" style="text-align: ${isRTL ? 'right' : 'left'};">
-                <strong>${country.name[currentLanguage]}</strong><br>
+                <strong>${getCountryFlagHtml(country.id, 'sm')} ${country.name[currentLanguage]}</strong><br>
                 ${labels.pop}: <strong>${country.stats.pop[currentLanguage]}</strong><br>
                 ${labels.army_reg}: <strong>${country.stats.army_regular[currentLanguage]}</strong><br>
                 ${labels.army_res}: <strong>${country.stats.army_reserves[currentLanguage]}</strong><br>
@@ -557,10 +1001,27 @@ function updateLabels(shouldRefreshStrengths = true) {
         });
 
         markers.push(marker);
+
+        // Israel name click opens the diplomacy panel (after hover tooltip).
+        if (isIsrael) {
+            marker.on('click', (event) => {
+                if (event && event.originalEvent) {
+                    L.DomEvent.stopPropagation(event.originalEvent);
+                }
+                openIsraelDiplomacyPanel();
+            });
+        }
     });
+
+    updateWarArrows();
 
     if (shouldRefreshStrengths) {
         refreshWarStrengths();
+    }
+
+    const diplomacyPanelEl = document.getElementById('israel-diplomacy-panel');
+    if (diplomacyPanelEl && diplomacyPanelEl.classList.contains('visible')) {
+        renderIsraelDiplomacyPanel();
     }
 }
 
@@ -644,7 +1105,7 @@ function renderCountryList() {
             else displayStatus = '❌';
         }
 
-        li.innerHTML = `<span>${country.name[currentLanguage]}</span> <span style="font-size: 14px; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8));">${displayStatus}</span>`;
+        li.innerHTML = `<span class="country-list-name">${getCountryFlagHtml(country.id, 'sm')}<span>${country.name[currentLanguage]}</span></span> <span style="font-size: 14px; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8));">${displayStatus}</span>`;
         
         li.addEventListener('mouseenter', () => {
             openContextMenu(country, li);
@@ -656,6 +1117,11 @@ function renderCountryList() {
 
         li.addEventListener('click', (event) => {
             event.stopPropagation();
+            if (isIsrael) {
+                closeContextMenuImmediately();
+                openIsraelDiplomacyPanel();
+                return;
+            }
             openContextMenu(country, li);
         });
         
@@ -666,10 +1132,158 @@ function renderCountryList() {
 let closeMenuTimeout;
 const contextMenu = document.getElementById('country-context-menu');
 const battlePowerPanel = document.getElementById('battle-power-panel');
+const israelDiplomacyPanel = document.getElementById('israel-diplomacy-panel');
+const israelDiplomacyList = document.getElementById('israel-diplomacy-list');
+const israelDiplomacyTitle = document.getElementById('israel-diplomacy-title');
+const israelDiplomacySubtitle = document.getElementById('israel-diplomacy-subtitle');
+const israelDiplomacyClose = document.getElementById('israel-diplomacy-close');
 let selectedWarTactic = 'attach_all_power';
+let suppressDiplomacyOutsideClose = false;
 
 function isMobileViewport() {
     return window.matchMedia('(max-width: 900px)').matches;
+}
+
+function getDiplomacyStatusMeta(diplomacyStatus) {
+    if (diplomacyStatus === 'peace') {
+        return {
+            text: currentLanguage === 'he' ? 'שלום' : (currentLanguage === 'ar' ? 'سلام' : 'Peace'),
+            className: 'status-peace',
+            icon: '🤝'
+        };
+    }
+    if (diplomacyStatus === 'war') {
+        return {
+            text: currentLanguage === 'he' ? 'במלחמה' : (currentLanguage === 'ar' ? 'في حرب' : 'At War'),
+            className: 'status-war',
+            icon: '⚔️'
+        };
+    }
+    if (diplomacyStatus === 'hostile') {
+        return {
+            text: currentLanguage === 'he' ? 'מצב מלחמה' : (currentLanguage === 'ar' ? 'حالة حرب' : 'War Condition'),
+            className: 'status-war',
+            icon: '🔥'
+        };
+    }
+    if (diplomacyStatus === 'conquered') {
+        return {
+            text: currentLanguage === 'he' ? 'נכבש' : (currentLanguage === 'ar' ? 'محتل' : 'Conquered'),
+            className: 'status-moderate',
+            icon: '🏳️'
+        };
+    }
+    return {
+        text: currentLanguage === 'he' ? 'מתון' : (currentLanguage === 'ar' ? 'معتدل' : 'Moderate'),
+        className: 'status-moderate',
+        icon: '❌'
+    };
+}
+
+function localizeDiplomacyPanelCopy() {
+    if (!israelDiplomacyTitle || !israelDiplomacySubtitle) return;
+    if (currentLanguage === 'he') {
+        israelDiplomacyTitle.textContent = 'דיפלומטיה — ישראל';
+        israelDiplomacySubtitle.textContent = 'בחרו מדינה, ואז הכרזת מלחמה או הצעת שלום.';
+    } else if (currentLanguage === 'ar') {
+        israelDiplomacyTitle.textContent = 'الدبلوماسية — إسرائيل';
+        israelDiplomacySubtitle.textContent = 'اختر دولة ثم أعلن الحرب أو اعرض السلام.';
+    } else {
+        israelDiplomacyTitle.textContent = 'Israel Diplomacy';
+        israelDiplomacySubtitle.textContent = 'Choose a country, then declare war or offer peace.';
+    }
+}
+
+function renderIsraelDiplomacyPanel() {
+    if (!israelDiplomacyList) return;
+    localizeDiplomacyPanelCopy();
+    israelDiplomacyList.innerHTML = '';
+
+    const actionPlaceholder = currentLanguage === 'he'
+        ? 'בחר פעולה'
+        : (currentLanguage === 'ar' ? 'اختر إجراءً' : 'Choose action');
+    const declareLabel = currentLanguage === 'he'
+        ? 'הכרז מלחמה'
+        : (currentLanguage === 'ar' ? 'إعلان الحرب' : 'Declare War');
+    const peaceLabel = currentLanguage === 'he'
+        ? 'הצע שלום'
+        : (currentLanguage === 'ar' ? 'عرض السلام' : 'Offer Peace');
+
+    countries
+        .filter(c => c.id !== 'israel')
+        .forEach(country => {
+            const diplomacyStatus = gameState.diplomacy[country.id] || 'neutral';
+            const meta = getDiplomacyStatusMeta(diplomacyStatus);
+            const isAtWar = diplomacyStatus === 'war';
+            const isAtPeace = diplomacyStatus === 'peace';
+            const canDeclare = !isAtWar && !gameState.warDeclaredThisTurn && diplomacyStatus !== 'conquered';
+            const canOfferPeace = !isAtPeace && !gameState.warDeclaredThisTurn && diplomacyStatus !== 'conquered';
+
+            const li = document.createElement('li');
+            li.className = 'israel-diplomacy-row';
+            li.innerHTML = `
+                <span class="israel-diplomacy-name">${getCountryFlagHtml(country.id, 'md')}<span>${meta.icon} ${country.name[currentLanguage]}</span></span>
+                <span class="israel-diplomacy-status ${meta.className}">${meta.text}</span>
+                <select class="israel-diplomacy-action" data-country-id="${country.id}" ${(!canDeclare && !canOfferPeace) ? 'disabled' : ''}>
+                    <option value="">${actionPlaceholder}</option>
+                    <option value="declare-war" ${canDeclare ? '' : 'disabled'}>${declareLabel}</option>
+                    <option value="offer-peace" ${canOfferPeace ? '' : 'disabled'}>${peaceLabel}</option>
+                </select>
+            `;
+
+            const select = li.querySelector('select');
+            select.addEventListener('change', () => {
+                const action = select.value;
+                select.value = '';
+                if (action === 'declare-war') {
+                    closeIsraelDiplomacyPanel();
+                    declareWar(country);
+                } else if (action === 'offer-peace') {
+                    closeIsraelDiplomacyPanel();
+                    offerPeace(country);
+                }
+            });
+
+            israelDiplomacyList.appendChild(li);
+        });
+}
+
+function openIsraelDiplomacyPanel() {
+    if (!israelDiplomacyPanel) return;
+    closeContextMenuImmediately();
+    hideBattlePowerPanel();
+    renderIsraelDiplomacyPanel();
+    israelDiplomacyPanel.style.display = 'flex';
+    israelDiplomacyPanel.setAttribute('aria-hidden', 'false');
+    // Ignore the same click that opened the panel (map/list) so it does not close immediately.
+    suppressDiplomacyOutsideClose = true;
+    setTimeout(() => {
+        suppressDiplomacyOutsideClose = false;
+    }, 0);
+    setTimeout(() => israelDiplomacyPanel.classList.add('visible'), 10);
+}
+
+function closeIsraelDiplomacyPanel() {
+    if (!israelDiplomacyPanel) return;
+    israelDiplomacyPanel.classList.remove('visible');
+    israelDiplomacyPanel.setAttribute('aria-hidden', 'true');
+    setTimeout(() => {
+        if (!israelDiplomacyPanel.classList.contains('visible')) {
+            israelDiplomacyPanel.style.display = 'none';
+        }
+    }, 200);
+}
+
+if (israelDiplomacyClose) {
+    israelDiplomacyClose.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeIsraelDiplomacyPanel();
+    });
+}
+
+if (israelDiplomacyPanel) {
+    L.DomEvent.disableClickPropagation(israelDiplomacyPanel);
+    L.DomEvent.disableScrollPropagation(israelDiplomacyPanel);
 }
 
 contextMenu.addEventListener('mouseenter', () => {
@@ -772,11 +1386,11 @@ async function showBattlePowerPanel(country) {
             <button class="battle-power-close" aria-label="Close">x</button>
             <div class="battle-power-title">Balance of Power</div>
             <div class="battle-power-row">
-                <div class="battle-power-label"><span>Israel</span><span>${attackerPct.toFixed(1)}%</span></div>
+                <div class="battle-power-label"><span class="battle-power-side">${getCountryFlagHtml('israel', 'sm')}<span>Israel</span></span><span>${attackerPct.toFixed(1)}%</span></div>
                 <div class="battle-power-bar"><div class="battle-power-fill attacker" style="width: ${attackerPct.toFixed(1)}%;"></div></div>
             </div>
             <div class="battle-power-row">
-                <div class="battle-power-label"><span>${country.name[currentLanguage]}</span><span>${defenderPct.toFixed(1)}%</span></div>
+                <div class="battle-power-label"><span class="battle-power-side">${getCountryFlagHtml(country.id, 'sm')}<span>${country.name[currentLanguage]}</span></span><span>${defenderPct.toFixed(1)}%</span></div>
                 <div class="battle-power-bar"><div class="battle-power-fill defender" style="width: ${defenderPct.toFixed(1)}%;"></div></div>
             </div>
             <div class="battle-power-winner">${winnerLabel}</div>
@@ -810,33 +1424,28 @@ function openContextMenu(country, liElement) {
     L.DomEvent.disableClickPropagation(contextMenu);
     L.DomEvent.disableScrollPropagation(contextMenu);
 
-    menuTitle.textContent = country.name[currentLanguage];
+    menuTitle.innerHTML = `${getCountryFlagHtml(country.id, 'md')}<span>${country.name[currentLanguage]}</span>`;
     const contextButtons = document.querySelector('.context-buttons');
     
     if (country.id === 'israel') {
         menuStatus.style.display = 'none';
         contextButtons.style.display = 'none';
+        // Clicking Israel opens the full diplomacy panel instead of this empty menu.
+        menuTitle.style.cursor = 'pointer';
+        menuTitle.onclick = () => {
+            closeContextMenuImmediately();
+            openIsraelDiplomacyPanel();
+        };
     } else {
+        menuTitle.style.cursor = 'default';
+        menuTitle.onclick = null;
         menuStatus.style.display = 'block';
         contextButtons.style.display = 'flex';
         
         const diplomacyStatus = gameState.diplomacy[country.id] || 'neutral';
-        let statusText = '';
-        let statusClass = '';
-        
-        if (diplomacyStatus === 'peace') {
-            statusText = currentLanguage === 'he' ? 'שלום' : (currentLanguage === 'ar' ? 'سلام' : 'Peace');
-            statusClass = 'status-peace';
-        } else if (diplomacyStatus === 'war') {
-            statusText = currentLanguage === 'he' ? 'במלחמה' : (currentLanguage === 'ar' ? 'في حرب' : 'At War');
-            statusClass = 'status-war';
-        } else if (diplomacyStatus === 'hostile') {
-            statusText = currentLanguage === 'he' ? 'מצב מלחמה' : (currentLanguage === 'ar' ? 'حالة حرب' : 'War Condition');
-            statusClass = 'status-war';
-        } else {
-            statusText = currentLanguage === 'he' ? 'מתון' : (currentLanguage === 'ar' ? 'معتدل' : 'Moderate');
-            statusClass = 'status-moderate';
-        }
+        const meta = getDiplomacyStatusMeta(diplomacyStatus);
+        const statusText = meta.text;
+        const statusClass = meta.className;
         
         if (currentLanguage === 'he') menuStatus.textContent = `סטטוס: ${statusText}`;
         else if (currentLanguage === 'ar') menuStatus.textContent = `الحالة: ${statusText}`;
@@ -865,10 +1474,17 @@ function openContextMenu(country, liElement) {
 
         // Never allow war declaration click action when already at war.
         btnWar.onclick = null;
+        btnPeace.onclick = null;
         if (!isAtWar && !gameState.warDeclaredThisTurn) {
             btnWar.onclick = () => {
                 scheduleCloseContextMenu();
                 declareWar(country);
+            };
+        }
+        if (diplomacyStatus !== 'peace' && !gameState.warDeclaredThisTurn) {
+            btnPeace.onclick = () => {
+                scheduleCloseContextMenu();
+                offerPeace(country);
             };
         }
 
@@ -939,6 +1555,17 @@ function declareWar(country) {
             updateLabels(); // this will also renderCountryList() giving us the new ⚔️ marker
         });
     }, 2500);
+}
+
+function offerPeace(country) {
+    if (!country || country.id === 'israel') return;
+    if (gameState.warDeclaredThisTurn || gameState.diplomacy[country.id] === 'peace') return;
+
+    gameState.warDeclaredThisTurn = true;
+    gameState.diplomacy[country.id] = 'peace';
+    console.log(`Offering peace to ${country.id}`);
+    saveState();
+    updateLabels();
 }
 
 function animateAttack(targetCountry, callback) {
@@ -1110,6 +1737,11 @@ map.on('drag', function () {
     map.panInsideBounds(bounds, { animate: false });
 });
 
+// Pixel-offset war arrows must be rebuilt after zoom/pan.
+map.on('zoomend moveend', () => {
+    updateWarArrows();
+});
+
 // --- Draggable Panel ---
 const listPanel = document.getElementById('country-list-panel');
 const panelTitle = document.getElementById('panel-title');
@@ -1120,6 +1752,14 @@ L.DomEvent.disableScrollPropagation(listPanel);
 document.addEventListener('click', (event) => {
     if (!contextMenu.contains(event.target)) {
         closeContextMenuImmediately();
+    }
+    if (
+        !suppressDiplomacyOutsideClose
+        && israelDiplomacyPanel
+        && israelDiplomacyPanel.classList.contains('visible')
+        && !israelDiplomacyPanel.contains(event.target)
+    ) {
+        closeIsraelDiplomacyPanel();
     }
 });
 

@@ -46,6 +46,41 @@ html {
     gap: 3px;
 }
 
+.country-flag {
+    display: inline-block;
+    vertical-align: middle;
+    object-fit: cover;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.35);
+    flex-shrink: 0;
+}
+
+.country-name-with-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.country-list-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.country-list-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.battle-power-side {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .country-strength-wrapper {
     display: flex;
     flex-direction: row;
@@ -266,6 +301,116 @@ html {
     opacity: 0.8;
 }
 
+/* --- Israel Diplomacy Panel --- */
+#israel-diplomacy-panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(720px, 94vw);
+    max-height: min(70vh, 560px);
+    background: rgba(10, 15, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: white;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    z-index: 2500;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+#israel-diplomacy-panel.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.israel-diplomacy-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    border: none;
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#israel-diplomacy-title {
+    margin: 0;
+    padding: 16px 40px 6px 16px;
+    font-size: 18px;
+    text-align: center;
+}
+
+#israel-diplomacy-subtitle {
+    margin: 0;
+    padding: 0 16px 12px;
+    font-size: 13px;
+    color: #94a3b8;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#israel-diplomacy-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.israel-diplomacy-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.4fr) minmax(90px, auto) minmax(160px, 180px);
+    gap: 14px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.israel-diplomacy-name {
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.israel-diplomacy-name > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.israel-diplomacy-status {
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.israel-diplomacy-action {
+    min-width: 140px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.israel-diplomacy-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* --- Context Menu --- */
 #country-context-menu {
     position: absolute;
@@ -409,6 +554,10 @@ html {
     font-size: 16px;
     color: #f8fafc;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 #context-menu-status {
@@ -475,6 +624,14 @@ html {
     pointer-events: none;
     z-index: 5000;
     text-shadow: 0 0 5px rgba(255,100,0,0.8);
+}
+
+.war-curved-arrow {
+    filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, 0.4));
+}
+
+.country-border-war {
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.35));
 }
 
 .newspaper-content {
@@ -607,6 +764,33 @@ html {
 
     #country-context-menu.visible {
         transform: translateY(0);
+    }
+
+    #israel-diplomacy-panel {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        transform: translateY(120%);
+        width: calc(100vw - 20px);
+        margin: 0 10px 10px;
+        max-height: 75vh;
+        border-radius: 14px;
+        transition: transform 0.24s ease, opacity 0.2s ease;
+    }
+
+    #israel-diplomacy-panel.visible {
+        transform: translateY(0);
+    }
+
+    .israel-diplomacy-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .israel-diplomacy-action {
+        width: 100%;
+        min-width: 0;
     }
 
     .context-menu-close {

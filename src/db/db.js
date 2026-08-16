@@ -9,7 +9,7 @@ const WAR_RULES_APP_STATE_KEY = 'war_engine_rules';
 const SQLITE_DB_PATH = path.join(__dirname, 'game.db.sqlite');
 const LEGACY_JSON_DB_PATH = path.join(__dirname, 'game.db.json');
 
-// Initial game state
+// Initial game state — Israel starts at war only with Gaza.
 const DEFAULT_STATE = {
     turn: 1,
     warDeclaredThisTurn: false,
@@ -18,16 +18,16 @@ const DEFAULT_STATE = {
         jordan: 'peace',
         turkey: 'peace',
         uae: 'peace',
-        lebanon: 'hostile',
-        syria: 'hostile',
-        iran: 'hostile',
-        qatar: 'hostile',
-        yemen: 'hostile',
-        bahrain: 'hostile',
+        lebanon: 'neutral',
+        syria: 'neutral',
+        iran: 'neutral',
+        qatar: 'neutral',
+        yemen: 'neutral',
+        bahrain: 'neutral',
         saudi_arabia: 'neutral',
         oman: 'neutral',
         kuwait: 'neutral',
-        iraq: 'hostile',
+        iraq: 'neutral',
         gaza_strip: 'war'
     }
 };
