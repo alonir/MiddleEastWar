@@ -1002,15 +1002,15 @@ function updateLabels(shouldRefreshStrengths = true) {
 
         markers.push(marker);
 
-        // Israel name click opens the diplomacy panel (after hover tooltip).
-        if (isIsrael) {
-            marker.on('click', (event) => {
-                if (event && event.originalEvent) {
-                    L.DomEvent.stopPropagation(event.originalEvent);
-                }
-                openIsraelDiplomacyPanel();
-            });
-        }
+        marker.on('click', (event) => {
+            const target = event?.originalEvent?.target;
+            const hitName = target && target.closest?.('.country-name-with-status');
+            if (!hitName) return;
+            if (event.originalEvent) {
+                L.DomEvent.stopPropagation(event.originalEvent);
+            }
+            focusCountryOnMap(country);
+        });
     });
 
     updateWarArrows();
@@ -1117,11 +1117,7 @@ function renderCountryList() {
 
         li.addEventListener('click', (event) => {
             event.stopPropagation();
-            if (isIsrael) {
-                closeContextMenuImmediately();
-                openIsraelDiplomacyPanel();
-                return;
-            }
+            focusCountryOnMap(country);
             openContextMenu(country, li);
         });
         
@@ -1142,6 +1138,16 @@ let suppressDiplomacyOutsideClose = false;
 
 function isMobileViewport() {
     return window.matchMedia('(max-width: 900px)').matches;
+}
+
+function focusCountryOnMap(country) {
+    if (!country?.coords) return;
+    const smallAreas = new Set(['gaza_strip', 'bahrain', 'qatar', 'kuwait', 'lebanon', 'israel']);
+    const zoom = smallAreas.has(country.id) ? 8 : 7;
+    map.flyTo(country.coords, zoom, {
+        duration: 1.2,
+        easeLinearity: 0.25
+    });
 }
 
 function getDiplomacyStatusMeta(diplomacyStatus) {
@@ -1427,18 +1433,30 @@ function openContextMenu(country, liElement) {
     menuTitle.innerHTML = `${getCountryFlagHtml(country.id, 'md')}<span>${country.name[currentLanguage]}</span>`;
     const contextButtons = document.querySelector('.context-buttons');
     
+    menuTitle.style.cursor = 'pointer';
+    menuTitle.onclick = (event) => {
+        event.stopPropagation();
+        focusCountryOnMap(country);
+        if (country.id === 'israel') {
+            closeContextMenuImmediately();
+            openIsraelDiplomacyPanel();
+        }
+    };
+
     if (country.id === 'israel') {
         menuStatus.style.display = 'none';
         contextButtons.style.display = 'none';
-        // Clicking Israel opens the full diplomacy panel instead of this empty menu.
-        menuTitle.style.cursor = 'pointer';
-        menuTitle.onclick = () => {
+        // Diplomacy opens only from this floating Israel hover overlay.
+        contextMenu.style.cursor = 'pointer';
+        contextMenu.onclick = (event) => {
+            if (event.target.closest('.context-menu-close')) return;
+            if (event.target.closest('#context-menu-title')) return;
             closeContextMenuImmediately();
             openIsraelDiplomacyPanel();
         };
     } else {
-        menuTitle.style.cursor = 'default';
-        menuTitle.onclick = null;
+        contextMenu.style.cursor = '';
+        contextMenu.onclick = null;
         menuStatus.style.display = 'block';
         contextButtons.style.display = 'flex';
         
