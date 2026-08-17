@@ -329,6 +329,10 @@ html {
     pointer-events: auto;
 }
 
+#israel-diplomacy-panel.diplomacy-dragged {
+    transform: none;
+}
+
 .israel-diplomacy-close {
     position: absolute;
     top: 8px;
@@ -346,6 +350,8 @@ html {
     padding: 16px 40px 6px 16px;
     font-size: 18px;
     text-align: center;
+    cursor: move;
+    user-select: none;
 }
 
 #israel-diplomacy-subtitle {

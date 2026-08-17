@@ -1134,7 +1134,6 @@ const israelDiplomacyTitle = document.getElementById('israel-diplomacy-title');
 const israelDiplomacySubtitle = document.getElementById('israel-diplomacy-subtitle');
 const israelDiplomacyClose = document.getElementById('israel-diplomacy-close');
 let selectedWarTactic = 'attach_all_power';
-let suppressDiplomacyOutsideClose = false;
 
 function isMobileViewport() {
     return window.matchMedia('(max-width: 900px)').matches;
@@ -1142,6 +1141,9 @@ function isMobileViewport() {
 
 function focusCountryOnMap(country) {
     if (!country?.coords) return;
+    if (country.id !== 'israel') {
+        closeIsraelDiplomacyPanel();
+    }
     const smallAreas = new Set(['gaza_strip', 'bahrain', 'qatar', 'kuwait', 'lebanon', 'israel']);
     const zoom = smallAreas.has(country.id) ? 8 : 7;
     map.flyTo(country.coords, zoom, {
@@ -1261,11 +1263,6 @@ function openIsraelDiplomacyPanel() {
     renderIsraelDiplomacyPanel();
     israelDiplomacyPanel.style.display = 'flex';
     israelDiplomacyPanel.setAttribute('aria-hidden', 'false');
-    // Ignore the same click that opened the panel (map/list) so it does not close immediately.
-    suppressDiplomacyOutsideClose = true;
-    setTimeout(() => {
-        suppressDiplomacyOutsideClose = false;
-    }, 0);
     setTimeout(() => israelDiplomacyPanel.classList.add('visible'), 10);
 }
 
@@ -1286,6 +1283,54 @@ if (israelDiplomacyClose) {
         closeIsraelDiplomacyPanel();
     });
 }
+
+(function makeDiplomacyPanelDraggable() {
+    if (!israelDiplomacyPanel || !israelDiplomacyTitle) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+
+    function pinDiplomacyPanelToPixels() {
+        const rect = israelDiplomacyPanel.getBoundingClientRect();
+        israelDiplomacyPanel.style.left = `${rect.left}px`;
+        israelDiplomacyPanel.style.top = `${rect.top}px`;
+        israelDiplomacyPanel.style.right = 'auto';
+        israelDiplomacyPanel.style.bottom = 'auto';
+        israelDiplomacyPanel.style.transform = 'none';
+        israelDiplomacyPanel.classList.add('diplomacy-dragged');
+    }
+
+    israelDiplomacyTitle.addEventListener('mousedown', (event) => {
+        if (event.button !== 0) return;
+        if (isMobileViewport()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        pinDiplomacyPanelToPixels();
+        dragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        document.addEventListener('mousemove', onDiplomacyDrag);
+        document.addEventListener('mouseup', stopDiplomacyDrag);
+    });
+
+    function onDiplomacyDrag(event) {
+        if (!dragging) return;
+        event.preventDefault();
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        startX = event.clientX;
+        startY = event.clientY;
+        israelDiplomacyPanel.style.left = `${israelDiplomacyPanel.offsetLeft + dx}px`;
+        israelDiplomacyPanel.style.top = `${israelDiplomacyPanel.offsetTop + dy}px`;
+    }
+
+    function stopDiplomacyDrag() {
+        dragging = false;
+        document.removeEventListener('mousemove', onDiplomacyDrag);
+        document.removeEventListener('mouseup', stopDiplomacyDrag);
+    }
+})();
 
 if (israelDiplomacyPanel) {
     L.DomEvent.disableClickPropagation(israelDiplomacyPanel);
@@ -1770,14 +1815,6 @@ L.DomEvent.disableScrollPropagation(listPanel);
 document.addEventListener('click', (event) => {
     if (!contextMenu.contains(event.target)) {
         closeContextMenuImmediately();
-    }
-    if (
-        !suppressDiplomacyOutsideClose
-        && israelDiplomacyPanel
-        && israelDiplomacyPanel.classList.contains('visible')
-        && !israelDiplomacyPanel.contains(event.target)
-    ) {
-        closeIsraelDiplomacyPanel();
     }
 });
 
